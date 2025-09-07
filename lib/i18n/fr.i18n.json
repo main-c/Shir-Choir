@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "Shir Choir",
+    "subtitle": "Interface de gestion de chorale"
+  },
+  "auth": {
+    "login": "Se connecter",
+    "selectRole": "Sélectionnez votre rôle",
+    "choriste": "Choriste",
+    "maestro": "Maestro",
+    "selectVoicePart": "Choisissez votre pupitre",
+    "soprano": "Soprano",
+    "alto": "Alto",
+    "tenor": "Ténor",
+    "bass": "Basse",
+    "enterName": "Entrez votre nom",
+    "namePlaceholder": "Votre nom"
+  },
+  "dashboard": {
+    "welcome": "Bienvenue",
+    "repertoire": "Répertoire",
+    "searchSongs": "Rechercher des chants...",
+    "searchPlaceholder": "Rechercher titre, compositeur...",
+    "filterAll": "Tous",
+    "filterNotStarted": "Non commencé",
+    "filterInProgress": "En cours",
+    "filterMastered": "Maîtrisé",
+    "notifications": "Notifications",
+    "nowPlaying": "En lecture",
+    "progress": "Progression",
+    "noSongsFound": "Aucun chant trouvé",
+    "clearSearch": "Effacer la recherche",
+    "totalSongs": "chants au total"
+  },
+  "song": {
+    "composer": "Compositeur",
+    "key": "Tonalité",
+    "voicePart": "Pupitre",
+    "status": "Statut",
+    "notStarted": "Non commencé",
+    "inProgress": "En cours d'apprentissage",
+    "mastered": "Maîtrisé",
+    "lyrics": "Paroles",
+    "phonetics": "Phonétique",
+    "translation": "Traduction",
+    "maestroNotes": "Notes du maestro"
+  },
+  "audio": {
+    "play": "Lecture",
+    "pause": "Pause",
+    "tempo": "Tempo",
+    "volume": "Volume",
+    "reset": "Réinitialiser",
+    "allVoices": "Toutes les voix"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "account": "Compte",
+    "theme": "Thème",
+    "themeSystem": "Système",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "language": "Langue",
+    "notifications": "Notifications",
+    "about": "À propos"
+  }
+}

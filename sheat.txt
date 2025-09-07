@@ -1,0 +1,10 @@
+Voici la logique correcte pour les remplacements :
+
+  - Colors.white sur fond primaire → Theme.of(context).colorScheme.onPrimary
+  - Colors.white comme fond de surface → Theme.of(context).colorScheme.surface
+  - Colors.black comme texte → Theme.of(context).colorScheme.onSurface
+  - Colors.grey → Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)
+  - Colors.blue → Theme.of(context).colorScheme.primary
+  - Colors.red pour erreur → Theme.of(context).colorScheme.error
+  - Colors.green pour succès → Il faudrait définir une couleur success dans le thème
+    
