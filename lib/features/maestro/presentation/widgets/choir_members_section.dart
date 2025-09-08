@@ -10,7 +10,8 @@ class ChoirMembersSection extends ConsumerStatefulWidget {
   const ChoirMembersSection({super.key});
 
   @override
-  ConsumerState<ChoirMembersSection> createState() => _ChoirMembersSectionState();
+  ConsumerState<ChoirMembersSection> createState() =>
+      _ChoirMembersSectionState();
 }
 
 class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
@@ -20,11 +21,13 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
   @override
   Widget build(BuildContext context) {
     final members = ref.watch(choirMembersProvider);
-    
+
     // Filtrer les membres
     final filteredMembers = members.where((member) {
-      final matchesSearch = member.name.toLowerCase().contains(_searchQuery.toLowerCase());
-      final matchesVoicePart = _voicePartFilter == null || member.voicePart == _voicePartFilter;
+      final matchesSearch =
+          member.name.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesVoicePart =
+          _voicePartFilter == null || member.voicePart == _voicePartFilter;
       return matchesSearch && matchesVoicePart;
     }).toList();
 
@@ -66,7 +69,7 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
             ],
           ),
         ),
-        
+
         // Liste des membres
         Expanded(
           child: ListView.builder(
@@ -87,7 +90,7 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
 
   Widget _buildFilterChip(String label, String? voicePart) {
     final isSelected = _voicePartFilter == voicePart;
-    
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -97,7 +100,9 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: Theme.of(context).colorScheme.primary,
@@ -107,7 +112,9 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.primary,
+            color: isSelected
+                ? Theme.of(context).colorScheme.onPrimary
+                : Theme.of(context).colorScheme.primary,
             fontWeight: FontWeight.w500,
             fontSize: 12,
           ),
@@ -117,14 +124,6 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
   }
 
   Widget _buildMemberCard(ChoirMember member) {
-    final masteredCount = member.songProgress.values
-        .where((status) => status == LearningStatus.mastered)
-        .length;
-    final inProgressCount = member.songProgress.values
-        .where((status) => status == LearningStatus.inProgress)
-        .length;
-    final totalSongs = member.songProgress.length;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -134,7 +133,10 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.1),
                   child: Text(
                     member.name.substring(0, 1).toUpperCase(),
                     style: TextStyle(
@@ -158,7 +160,10 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
                       Text(
                         _getVoicePartLabel(member.voicePart),
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
                           fontSize: 14,
                         ),
                       ),
@@ -166,9 +171,11 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getVoicePartColor(member.voicePart).withValues(alpha: 0.1),
+                    color: _getVoicePartColor(member.voicePart)
+                        .withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -183,36 +190,14 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
               ],
             ),
             const SizedBox(height: 12),
-            
-            // Progression
-            Row(
-              children: [
-                Expanded(
-                  child: _buildProgressIndicator(
-                    'Maîtrisé',
-                    masteredCount,
-                    totalSongs,
-                    Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildProgressIndicator(
-                    'En cours',
-                    inProgressCount,
-                    totalSongs,
-                    Colors.orange,
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildProgressIndicator(String label, int count, int total, Color color) {
+  Widget _buildProgressIndicator(
+      String label, int count, int total, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -226,7 +211,8 @@ class _ChoirMembersSectionState extends ConsumerState<ChoirMembersSection> {
         const SizedBox(height: 4),
         LinearProgressIndicator(
           value: total > 0 ? count / total : 0,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor:
+              Theme.of(context).colorScheme.surfaceContainerHighest,
           valueColor: AlwaysStoppedAnimation<Color>(color),
         ),
       ],

@@ -107,7 +107,11 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   @override
   Widget build(BuildContext context) {
     final songs = ref.watch(songsProvider);
-    final song = songs.firstWhere((s) => s.id == widget.songId);
+    final songsList = songs.valueOrNull ?? [];
+    final song = songsList.firstWhere(
+      (s) => s.id == widget.songId,
+      orElse: () => throw Exception('Chant non trouvé'),
+    );
 
     return AnimatedBuilder(
       animation: _slideAnimation,

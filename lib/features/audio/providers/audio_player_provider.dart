@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dart:async';
@@ -97,8 +98,20 @@ class AudioPlayerNotifier extends StateNotifier<AudioPlayerState> {
         final player = AudioPlayer();
         _players[voicePart] = player;
 
-        // Configurer le player
-        await player.setAsset(audioUrl);
+        // Configurer le player avec le bon chemin
+        print('🎵 Chargement audio: $audioUrl');
+        
+        if (audioUrl.startsWith('assets/')) {
+          // Fichier asset du bundle
+          await player.setAsset(audioUrl);
+        } else if (audioUrl.startsWith('/') || audioUrl.contains('/')) {
+          // Chemin absolu de fichier système
+          await player.setFilePath(audioUrl);
+        } else {
+          // Chemin relatif - il faut le localPath du chant
+          print('⚠️ Chemin relatif détecté: $audioUrl - besoin du localPath');
+          throw Exception('Chemin relatif non supporté - utilisez playSong() avec Song complet');
+        }
 
         // Forcer la récupération de duration après le chargement
         if (voicePart == primaryVoicePart) {
@@ -233,14 +246,71 @@ class AudioPlayerNotifier extends StateNotifier<AudioPlayerState> {
 
   // Nouvelle méthode pour jouer directement depuis une Song
   Future<void> playSong(Song song, String userVoicePart) async {
-    if (song.audioUrls.isNotEmpty) {
+    if (song.audioUrls.isNotEmpty && song.localPath != null) {
+      // Construire les chemins absolus à partir du localPath
+      final absoluteAudioUrls = <String, String>{};
+      
+      for (final entry in song.audioUrls.entries) {
+        final voicePart = entry.key;
+        final relativePath = entry.value;
+        
+        // Essayer différentes combinaisons de chemins
+        final possiblePaths = [
+          '${song.localPath}/$relativePath',                    // Normal
+          '${song.localPath}/${song.id}/$relativePath',         // Avec sous-dossier songId
+        ];
+        
+        String? validPath;
+        for (final path in possiblePaths) {
+          if (await File(path).exists()) {
+            validPath = path;
+            print('✅ Fichier trouvé: $path');
+            break;
+          } else {
+            print('❌ Fichier non trouvé: $path');
+          }
+        }
+        
+        if (validPath == null) {
+          // Dernier recours : scanner le dossier pour trouver le fichier audio
+          validPath = await _findAudioFileInDirectory('${song.localPath}');
+          if (validPath != null) {
+            print('🔍 Fichier audio trouvé par scan: $validPath');
+          }
+        }
+        
+        absoluteAudioUrls[voicePart] = validPath ?? possiblePaths.first;
+      }
+      
+      print('🎵 Chemins audio absolus: $absoluteAudioUrls');
+      
       await loadSong(
-        song.audioUrls,
+        absoluteAudioUrls,
         userVoicePart,
         songId: song.id,
         songTitle: song.title,
       );
       await play();
+    } else {
+      print('❌ Impossible de jouer: audioUrls vides ou localPath manquant');
+    }
+  }
+
+  // Helper pour trouver un fichier audio dans un dossier
+  Future<String?> _findAudioFileInDirectory(String dirPath) async {
+    try {
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) return null;
+      
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.mp3')) {
+          return entity.path;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('❌ Erreur scan dossier: $e');
+      return null;
     }
   }
 

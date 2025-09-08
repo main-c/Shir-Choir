@@ -5,16 +5,15 @@ import '../../models/song_model.dart';
 
 class SearchFilterBar extends StatelessWidget {
   final String searchQuery;
-  final LearningStatus? statusFilter;
+  
   final Function(String) onSearchChanged;
-  final Function(LearningStatus?) onStatusFilterChanged;
+ 
 
   const SearchFilterBar({
     super.key,
     required this.searchQuery,
-    required this.statusFilter,
+ 
     required this.onSearchChanged,
-    required this.onStatusFilterChanged,
   });
 
   @override
@@ -39,43 +38,7 @@ class SearchFilterBar extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // Filtres de statut
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _FilterChip(
-                label: t.dashboard.filterAll,
-                isSelected: statusFilter == null,
-                onTap: () => onStatusFilterChanged(null),
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: t.dashboard.filterNotStarted,
-                isSelected: statusFilter == LearningStatus.notStarted,
-                onTap: () => onStatusFilterChanged(LearningStatus.notStarted),
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.6),
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: t.dashboard.filterInProgress,
-                isSelected: statusFilter == LearningStatus.inProgress,
-                onTap: () => onStatusFilterChanged(LearningStatus.inProgress),
-                color: Colors.orange,
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: t.dashboard.filterMastered,
-                isSelected: statusFilter == LearningStatus.mastered,
-                onTap: () => onStatusFilterChanged(LearningStatus.mastered),
-                color: Colors.green,
-              ),
-            ],
-          ),
-        ),
+       
       ],
     );
   }

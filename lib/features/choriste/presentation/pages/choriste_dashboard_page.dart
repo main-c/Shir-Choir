@@ -8,6 +8,7 @@ import '../../../auth/providers/auth_provider.dart';
 import '../../../auth/models/user_model.dart';
 import '../../providers/songs_provider.dart';
 import '../../models/song_model.dart';
+import '../widgets/learning_center_sheet.dart';
 import '../widgets/music_song_card.dart';
 import '../widgets/now_playing_bottom_bar.dart';
 
@@ -21,7 +22,7 @@ class ChoristeDashboardPage extends ConsumerStatefulWidget {
 
 class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
   String _searchQuery = '';
-  LearningStatus? _statusFilter;
+
   final _searchController = TextEditingController();
 
   @override
@@ -37,18 +38,15 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
     final t = Translations.of(context);
 
     // Filtrer les chants selon la recherche et le statut
-    final filteredSongs = songs.where((song) {
+    final songsList = songs.valueOrNull ?? [];
+    final filteredSongs = songsList.where((song) {
       final matchesSearch =
           song.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
               song.composer.toLowerCase().contains(_searchQuery.toLowerCase());
 
       if (!matchesSearch) return false;
 
-      if (_statusFilter != null) {
-        final progress =
-            ref.read(songProgressProvider.notifier).getProgress(song.id);
-        return progress == _statusFilter;
-      }
+      // Filtrage par statut retiré temporairement pour le MVP
 
       return true;
     }).toList();
@@ -57,7 +55,7 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Column(
         children: [
-          _buildHeader(context, t, user, songs.length),
+          _buildHeader(context, t, user, songsList.length),
           _buildModernSearchBar(context, t),
           // _buildFilterChips(context, t),
           Expanded(
@@ -73,7 +71,37 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                         child: MusicSongCard(
                           song: song,
                           onTap: () {
-                            context.go('/choriste/chant/${song.id}');
+                            // Ouvrir les détails seulement si le chant est téléchargé
+                            if (song.availability ==
+                                SongAvailability.downloadedAndReady) {
+                              // Ouvrir le learning center au lieu de song detail
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (context) =>
+                                    LearningCenterSheet(songId: song.id),
+                              );
+                            } else {
+                              // Montrer un snackbar informatif pour les chants non disponibles
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(_getAvailabilityMessage(
+                                      song.availability)),
+                                  action: song.availability ==
+                                          SongAvailability.availableForDownload
+                                      ? SnackBarAction(
+                                          label: 'Télécharger',
+                                          onPressed: () {
+                                            ref
+                                                .read(songsProvider.notifier)
+                                                .downloadSong(song.id);
+                                          },
+                                        )
+                                      : null,
+                                ),
+                              );
+                            }
                           },
                         ),
                       );
@@ -253,7 +281,7 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                                         Theme.of(context).colorScheme.onPrimary,
                                   ),
                                   const SizedBox(width: 4),
-                                   Text(
+                                  Text(
                                     user.voicePart ?? 'Aucune voix',
                                     style: TextStyle(
                                       color: Theme.of(context)
@@ -410,60 +438,6 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
     );
   }
 
-  Widget _buildFilterChips(BuildContext context, Translations t) {
-    return Container(
-      height: 50,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          _buildFilterChip(context, null, t.dashboard.filterAll),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-              context, LearningStatus.notStarted, t.dashboard.filterNotStarted),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-              context, LearningStatus.inProgress, t.dashboard.filterInProgress),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-              context, LearningStatus.mastered, t.dashboard.filterMastered),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(
-      BuildContext context, LearningStatus? status, String label) {
-    final isSelected = _statusFilter == status;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _statusFilter = status;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected
-                ? Theme.of(context).colorScheme.onPrimary
-                : Theme.of(context).colorScheme.onSurface,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmptyState(BuildContext context, Translations t) {
     return Center(
       child: Column(
@@ -505,5 +479,24 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
         ],
       ),
     );
+  }
+
+  String _getAvailabilityMessage(SongAvailability availability) {
+    switch (availability) {
+      case SongAvailability.availableForDownload:
+        return 'Ce chant est disponible au téléchargement';
+      case SongAvailability.updateAvailable:
+        return 'Une nouvelle version de ce chant est disponible';
+      case SongAvailability.downloading:
+        return 'Téléchargement en cours...';
+      case SongAvailability.syncError:
+        return 'Erreur de téléchargement. Réessayez';
+      case SongAvailability.localOnly:
+        return 'Ce chant n\'est disponible qu\'en local';
+      case SongAvailability.downloadedAndReady:
+        return 'Chant prêt à être joué';
+      default:
+        return 'Statut inconnu';
+    }
   }
 }

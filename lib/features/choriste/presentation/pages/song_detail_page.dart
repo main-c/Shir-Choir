@@ -10,7 +10,6 @@ import '../../providers/songs_provider.dart';
 import '../../models/song_model.dart';
 import '../widgets/voice_part_tabs.dart';
 import '../widgets/song_content_section.dart';
-import '../widgets/status_selector_section.dart';
 
 class SongDetailPage extends ConsumerStatefulWidget {
   final String songId;
@@ -36,7 +35,7 @@ class _SongDetailPageState extends ConsumerState<SongDetailPage> {
       if (user?.voicePart != null) {
         setState(() {
           _selectedVoicePart = user!.voicePart;
-        });
+        }); 
       }
     });
   }
@@ -45,7 +44,11 @@ class _SongDetailPageState extends ConsumerState<SongDetailPage> {
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user!;
     final songs = ref.watch(songsProvider);
-    final song = songs.firstWhere((s) => s.id == widget.songId);
+    final songsList = songs.valueOrNull ?? [];
+    final song = songsList.firstWhere(
+      (s) => s.id == widget.songId,
+      orElse: () => throw Exception('Chant non trouvé'),
+    );
     final t = Translations.of(context);
 
     // Utiliser le pupitre de l'utilisateur par défaut
@@ -129,10 +132,7 @@ class _SongDetailPageState extends ConsumerState<SongDetailPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Sélecteur de statut personnel
-                  StatusSelectorSection(
-                    songId: song.id,
-                    userId: user.id,
-                  ),
+                 
 
                   const SizedBox(height: 24),
 

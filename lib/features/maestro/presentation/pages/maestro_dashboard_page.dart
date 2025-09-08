@@ -6,7 +6,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../providers/choir_management_provider.dart';
 import '../widgets/maestro_header.dart';
-import '../widgets/stats_overview.dart';
 import '../widgets/choir_members_section.dart';
 import '../widgets/repertoire_management_section.dart';
 import '../widgets/add_song_fab.dart';
@@ -82,7 +81,6 @@ class _MaestroDashboardPageState extends ConsumerState<MaestroDashboardPage>
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        StatsOverview(stats: stats),
                         const SizedBox(height: 16),
                         _buildRecentActivity(context),
                         const SizedBox(height: 16),
