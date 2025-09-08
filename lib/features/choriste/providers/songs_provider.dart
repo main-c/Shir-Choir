@@ -1,8 +1,168 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/song_model.dart';
+import '../models/song_extensions.dart';
+import '../../../core/services/sync_service.dart';
 
-// Mock data pour la démonstration
-final songsProvider = Provider<List<Song>>((ref) {
+// Provider pour la liste des chants avec synchronisation
+final songsProvider =
+    StateNotifierProvider<SongsNotifier, AsyncValue<List<Song>>>((ref) {
+  return SongsNotifier();
+});
+
+class SongsNotifier extends StateNotifier<AsyncValue<List<Song>>> {
+  SongsNotifier() : super(const AsyncValue.loading()) {
+    loadSongs();
+  }
+
+  final SyncService _syncService = SyncService();
+
+  /// Charge tous les chants (locaux + distants si connecté)
+  Future<void> loadSongs() async {
+    try {
+      state = const AsyncValue.loading();
+      final songs = await _syncService.loadAllSongs();
+      state = AsyncValue.data(songs);
+    } catch (e, stackTrace) {
+      state = AsyncValue.error(e, stackTrace);
+    }
+  }
+
+  /// Télécharge un chant spécifique
+  Future<void> downloadSong(String songId) async {
+    try {
+      // Trouver le chant dans la liste actuelle
+      final currentSongs = state.valueOrNull ?? [];
+      final songToDownload = currentSongs.firstWhere(
+        (s) => s.id == songId,
+        orElse: () => throw Exception('Chant non trouvé: $songId'),
+      );
+
+      if (songToDownload.version == null) {
+        throw Exception('Version du chant non disponible');
+      }
+
+      // Mettre à jour le statut à "téléchargement"
+      final updatedSongs = currentSongs.map((song) {
+        if (song.id == songId) {
+          return song.copyWith(availability: SongAvailability.downloading);
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(updatedSongs);
+
+      // Télécharger le chant
+      final downloadedSong =
+          await _syncService.downloadSong(songId, songToDownload.version!);
+
+      // Mettre à jour la liste avec le chant téléchargé
+      final finalSongs = updatedSongs.map((song) {
+        if (song.id == songId) {
+          return downloadedSong;
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(finalSongs);
+    } catch (e) {
+      // En cas d'erreur, marquer le chant comme erreur de sync
+      final currentSongs = state.valueOrNull ?? [];
+      final errorSongs = currentSongs.map((song) {
+        if (song.id == songId) {
+          return song.copyWith(availability: SongAvailability.syncError);
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(errorSongs);
+
+      rethrow;
+    }
+  }
+
+  /// Met à jour un chant existant
+  Future<void> updateSong(String songId) async {
+    try {
+      final currentSongs = state.valueOrNull ?? [];
+      final songToUpdate = currentSongs.firstWhere(
+        (s) => s.id == songId,
+        orElse: () => throw Exception('Chant non trouvé: $songId'),
+      );
+
+      if (songToUpdate.version == null) {
+        throw Exception('Version du chant non disponible');
+      }
+
+      // Marquer comme en téléchargement
+      final updatedSongs = currentSongs.map((song) {
+        if (song.id == songId) {
+          return song.copyWith(availability: SongAvailability.downloading);
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(updatedSongs);
+
+      // Mettre à jour le chant
+      final updatedSong =
+          await _syncService.updateSong(songId, songToUpdate.version!);
+
+      // Mettre à jour la liste
+      final finalSongs = updatedSongs.map((song) {
+        if (song.id == songId) {
+          return updatedSong;
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(finalSongs);
+    } catch (e) {
+      // Gérer l'erreur
+      final currentSongs = state.valueOrNull ?? [];
+      final errorSongs = currentSongs.map((song) {
+        if (song.id == songId) {
+          return song.copyWith(availability: SongAvailability.syncError);
+        }
+        return song;
+      }).toList();
+      state = AsyncValue.data(errorSongs);
+
+      rethrow;
+    }
+  }
+
+  /// Supprime un chant téléchargé
+  Future<void> deleteSong(String songId) async {
+    try {
+      await _syncService.deleteSong(songId);
+
+      // Retirer le chant de la liste ou le marquer comme disponible pour téléchargement
+      final currentSongs = state.valueOrNull ?? [];
+      final updatedSongs = currentSongs.map((song) {
+        if (song.id == songId) {
+          return song.copyWith(
+            availability: SongAvailability.availableForDownload,
+            localPath: null,
+            lastSync: null,
+          );
+        }
+        return song;
+      }).toList();
+
+      state = AsyncValue.data(updatedSongs);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Force la synchronisation avec le serveur
+  Future<void> forceSync() async {
+    await loadSongs();
+  }
+
+  /// Vérifie les mises à jour disponibles
+  Future<List<Song>> checkForUpdates() async {
+    return await _syncService.checkForUpdates();
+  }
+}
+
+// Provider de fallback avec données mockées pour le développement
+final mockSongsProvider = Provider<List<Song>>((ref) {
   return [
     Song(
       id: '1',
@@ -115,30 +275,4 @@ final songsProvider = Provider<List<Song>>((ref) {
   ];
 });
 
-class SongProgressNotifier extends StateNotifier<Map<String, SongProgress>> {
-  SongProgressNotifier() : super({});
-
-  void updateProgress(String songId, String userId, LearningStatus status) {
-    final progress = SongProgress(
-      songId: songId,
-      userId: userId,
-      status: status,
-      updatedAt: DateTime.now(),
-    );
-
-    state = {
-      ...state,
-      songId: progress,
-    };
-  }
-
-  LearningStatus getProgress(String songId) {
-    return state[songId]?.status ?? LearningStatus.notStarted;
-  }
-}
-
-final songProgressProvider =
-    StateNotifierProvider<SongProgressNotifier, Map<String, SongProgress>>(
-        (ref) {
-  return SongProgressNotifier();
-});
+// Système de progression retiré temporairement pour le MVP

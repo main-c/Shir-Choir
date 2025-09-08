@@ -12,6 +12,12 @@ class Song {
   final Duration duration; // Durée du chant
   final DateTime createdAt;
   
+  // Nouvelles propriétés pour la synchronisation
+  final SongAvailability availability;
+  final int? version;
+  final String? localPath;
+  final DateTime? lastSync;
+  
   const Song({
     required this.id,
     required this.title,
@@ -25,9 +31,18 @@ class Song {
     required this.maestroNotes,
     required this.duration,
     required this.createdAt,
+    this.availability = SongAvailability.localOnly,
+    this.version,
+    this.localPath,
+    this.lastSync,
   });
   
-  factory Song.fromJson(Map<String, dynamic> json) {
+  factory Song.fromJson(Map<String, dynamic> json, {
+    SongAvailability? availability,
+    int? version,
+    String? localPath,
+    DateTime? lastSync,
+  }) {
     return Song(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -45,52 +60,38 @@ class Song {
       maestroNotes: Map<String, String>.from(json['maestroNotes']),
       duration: Duration(seconds: json['duration'] as int),
       createdAt: DateTime.parse(json['createdAt']),
+      availability: availability ?? SongAvailability.localOnly,
+      version: version,
+      localPath: localPath,
+      lastSync: lastSync,
+    );
+  }
+  
+  // Factory pour les données Firebase (manifeste)
+  factory Song.fromManifest(Map<String, dynamic> json) {
+    return Song(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      composer: json['composer'] as String,
+      key: '', // Sera rempli lors du téléchargement
+      voicePartKeys: {},
+      lyrics: {},
+      audioUrls: {},
+      maestroNotes: {},
+      duration: Duration(seconds: json['duration'] as int? ?? 0),
+      createdAt: DateTime.parse(json['last_updated']),
+      availability: SongAvailability.availableForDownload,
+      version: json['version'] as int?,
     );
   }
 }
 
-enum LearningStatus {
-  notStarted('not_started', 'Non commencé'),
-  inProgress('in_progress', 'En cours d\'apprentissage'),
-  mastered('mastered', 'Maîtrisé');
-  
-  const LearningStatus(this.key, this.label);
-  
-  final String key;
-  final String label;
+enum SongAvailability {
+  downloadedAndReady,     // ✅ Téléchargé, prêt à jouer
+  availableForDownload,   // ☁️ Visible mais pas téléchargé
+  updateAvailable,        // 🔄 Nouvelle version disponible
+  downloading,            // ⬇️ En cours de téléchargement
+  localOnly,             // 📱 Seulement en local (pas de réseau)
+  syncError,             // ❌ Erreur de synchronisation
 }
 
-class SongProgress {
-  final String songId;
-  final String userId;
-  final LearningStatus status;
-  final DateTime updatedAt;
-  
-  const SongProgress({
-    required this.songId,
-    required this.userId,
-    required this.status,
-    required this.updatedAt,
-  });
-  
-  factory SongProgress.fromJson(Map<String, dynamic> json) {
-    return SongProgress(
-      songId: json['songId'] as String,
-      userId: json['userId'] as String,
-      status: LearningStatus.values.firstWhere(
-        (s) => s.key == json['status'],
-        orElse: () => LearningStatus.notStarted,
-      ),
-      updatedAt: DateTime.parse(json['updatedAt']),
-    );
-  }
-  
-  Map<String, dynamic> toJson() {
-    return {
-      'songId': songId,
-      'userId': userId,
-      'status': status.key,
-      'updatedAt': updatedAt.toIso8601String(),
-    };
-  }
-}

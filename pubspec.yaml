@@ -30,8 +30,18 @@ dependencies:
   # Audio
   just_audio: ^0.9.39
   
-  # Storage & State
+  # Firebase
+  
+  # Storage & Database
   shared_preferences: ^2.2.3
+  sqflite: ^2.3.0
+  path_provider: ^2.1.2
+  path: ^1.8.3
+  
+  # Network & Utils
+  connectivity_plus: ^5.0.2
+  http: ^1.1.2
+  archive: ^3.4.10
   
   # Icons & UI
   cupertino_icons: ^1.0.8
