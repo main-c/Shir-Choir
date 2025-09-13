@@ -304,62 +304,10 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                   onTap: () {
                     context.push('/user/settings');
                   },
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onPrimary
-                          .withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(25),
-                      border: Border.all(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onPrimary
-                            .withOpacity(0.4),
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(23),
-                      child: Image.network(
-                        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .onPrimary
-                                      .withOpacity(0.1),
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .onPrimary
-                                      .withOpacity(0.2),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.person_rounded,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                              size: 24,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                  child: Icon(
+                    Icons.settings,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    size: 24,
                   ),
                 ),
               ],

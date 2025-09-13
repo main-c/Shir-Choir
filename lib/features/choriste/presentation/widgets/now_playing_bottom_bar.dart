@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_audio_waveforms/flutter_audio_waveforms.dart';
 
 import '../../../../i18n/strings.g.dart';
 import '../../../audio/providers/audio_player_provider.dart';
@@ -35,18 +36,18 @@ class NowPlayingBottomBar extends ConsumerWidget {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         border: Border(
           top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity( 0.2),
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
             width: 1,
           ),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity( 0.15),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 16,
             offset: const Offset(0, -4),
           ),
           BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withOpacity( 0.1),
+            color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
@@ -55,11 +56,12 @@ class NowPlayingBottomBar extends ConsumerWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Barre de progression globale en haut
             Consumer(
               builder: (context, ref, child) {
                 final audioState = ref.watch(audioPlayerProvider);
+
                 final progress = audioState.duration.inMilliseconds > 0
                     ? (audioState.position.inMilliseconds /
                             audioState.duration.inMilliseconds)
@@ -68,25 +70,47 @@ class NowPlayingBottomBar extends ConsumerWidget {
 
                 return Container(
                   height: 3,
-                  margin: const EdgeInsets.only(bottom: 8),
+                  margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity( 0.1),
-                    borderRadius: BorderRadius.circular(1.5),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.15), // Couleur du fond vide
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: progress,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(1.5),
+                  child: Stack(
+                    children: [
+                      // Couleur de "buffer" (fixe)
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: 1.0, // Toute la largeur
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .secondary
+                                .withOpacity(0.3), // Couleur "chargée"
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
                       ),
-                    ),
+                      // Progression réelle
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: progress,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
-            
+
             // Contrôles principaux
             Row(
               children: [
@@ -125,7 +149,8 @@ class NowPlayingBottomBar extends ConsumerWidget {
                   child: GestureDetector(
                     onTap: () {
                       if (audioState.currentSongId != null) {
-                        _showNowPlayingSheet(context, audioState.currentSongId!);
+                        _showNowPlayingSheet(
+                            context, audioState.currentSongId!);
                       }
                     },
                     child: Column(
@@ -134,7 +159,10 @@ class NowPlayingBottomBar extends ConsumerWidget {
                       children: [
                         Text(
                           audioState.currentSongTitle!,
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
@@ -145,10 +173,33 @@ class NowPlayingBottomBar extends ConsumerWidget {
                         Consumer(
                           builder: (context, ref, child) {
                             final audioState = ref.watch(audioPlayerProvider);
+
+                            // ✅ Afficher l'erreur si elle existe
+                            if (audioState.error != null) {
+                              return Text(
+                                audioState.error!,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            }
+
                             return Text(
                               '${_formatDuration(audioState.position)} / ${_formatDuration(audioState.duration)}',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurface.withOpacity( 0.6),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withOpacity(0.6),
                                   ),
                             );
                           },
@@ -165,20 +216,18 @@ class NowPlayingBottomBar extends ConsumerWidget {
                     // Bouton rewind (-10s)
                     IconButton(
                       onPressed: () {
-                        ref.read(audioPlayerProvider.notifier).seek(
-                          Duration(
-                            milliseconds: (audioState.position.inMilliseconds - 10000)
-                                .clamp(0, audioState.duration.inMilliseconds),
-                          ),
-                        );
+                        ref.read(audioPlayerProvider.notifier).seekBackward();
                       },
                       icon: Icon(
                         Icons.replay_10,
                         size: 24,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity( 0.7),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.7),
                       ),
                     ),
-                    
+
                     // Bouton play/pause principal
                     Container(
                       width: 44,
@@ -188,7 +237,10 @@ class NowPlayingBottomBar extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(22),
                         boxShadow: [
                           BoxShadow(
-                            color: Theme.of(context).colorScheme.primary.withOpacity( 0.3),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.3),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -202,28 +254,38 @@ class NowPlayingBottomBar extends ConsumerWidget {
                             ref.read(audioPlayerProvider.notifier).play();
                           }
                         },
-                        icon: Icon(
-                          audioState.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                          size: 24,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                        ),
+                        icon: audioState.isLoading
+                            ? SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color:
+                                      Theme.of(context).colorScheme.onPrimary,
+                                ),
+                              )
+                            : Icon(
+                                audioState.isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                size: 24,
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
                       ),
                     ),
-                    
+
                     // Bouton fast-forward (+10s)
                     IconButton(
                       onPressed: () {
-                        ref.read(audioPlayerProvider.notifier).seek(
-                          Duration(
-                            milliseconds: (audioState.position.inMilliseconds + 10000)
-                                .clamp(0, audioState.duration.inMilliseconds),
-                          ),
-                        );
+                        ref.read(audioPlayerProvider.notifier).seekForward();
                       },
                       icon: Icon(
                         Icons.forward_10,
                         size: 24,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity( 0.7),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -239,7 +301,10 @@ class NowPlayingBottomBar extends ConsumerWidget {
                   icon: Icon(
                     Icons.keyboard_arrow_up,
                     size: 24,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity( 0.6),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.6),
                   ),
                 ),
               ],

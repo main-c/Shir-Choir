@@ -5,22 +5,34 @@ class VoicePartTabs extends StatelessWidget {
   final String selectedVoicePart;
   final String userVoicePart;
   final Function(String) onVoicePartChanged;
+  final Map<String, String> availableVoices; // Voix disponibles du chant
 
   const VoicePartTabs({
     super.key,
     required this.selectedVoicePart,
     required this.userVoicePart,
     required this.onVoicePartChanged,
+    required this.availableVoices,
   });
 
   @override
   Widget build(BuildContext context) {
-    final voiceParts = [
-      {'key': 'soprano', 'label': 'Soprano'},
-      {'key': 'alto', 'label': 'Alto'},
-      {'key': 'tenor', 'label': 'Ténor'},
-      {'key': 'bass', 'label': 'Basse'},
-    ];
+    // Créer la liste des voix disponibles avec leurs labels
+    final voiceLabels = {
+      'soprano': 'Soprano',
+      'alto': 'Alto',  
+      'tenor': 'Ténor',
+      'bass': 'Basse',
+    };
+
+    // Ne garder que les voix disponibles dans les métadonnées du chant
+    final voiceParts = availableVoices.keys
+        .where((voice) => voiceLabels.containsKey(voice.toLowerCase()))
+        .map((voice) => {
+              'key': voice.toLowerCase(),
+              'label': voiceLabels[voice.toLowerCase()] ?? voice,
+            })
+        .toList();
 
     return Container(
       width: double.infinity,
