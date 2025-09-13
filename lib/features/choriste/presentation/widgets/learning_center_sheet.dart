@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart' as just_audio;
+import 'package:flutter_audio_waveforms/flutter_audio_waveforms.dart';
 
 import '../../../../i18n/strings.g.dart';
 import '../../../audio/providers/audio_player_provider.dart';
@@ -26,9 +31,11 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   late TabController _tabController;
   late Animation<double> _slideAnimation;
   late ScrollController _scrollController;
+  late ScrollController _waveformScrollController;
 
   // État des voix sélectionnées pour le mélange
   Set<String> selectedVoices = {};
+  String? selectedVoicePart; // Pupitre sélectionné (soprano, alto, tenor, bass)
   String? primaryVoice; // Voix principale sélectionnée
   bool showTranslation = false;
   bool showPhonetics = true;
@@ -59,6 +66,9 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
     // Contrôleur d'onglets
     _tabController = TabController(length: 4, vsync: this);
+
+    // Contrôleur waveform pour scrolling automatique
+    _waveformScrollController = ScrollController();
 
     _animationController.forward();
   }
@@ -95,6 +105,7 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
     _animationController.dispose();
     _tabController.dispose();
     _scrollController.dispose();
+    _waveformScrollController.dispose();
     super.dispose();
   }
 
@@ -426,33 +437,6 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           children: [
-            // Visualisation audio en forme d'onde
-            Container(
-              height: 80,
-              width: double.infinity,
-              child: CustomPaint(
-                painter: WaveformPainter(
-                  progress:
-                      ref.watch(audioPlayerProvider).duration.inMilliseconds > 0
-                          ? (ref
-                                      .watch(audioPlayerProvider)
-                                      .position
-                                      .inMilliseconds /
-                                  ref
-                                      .watch(audioPlayerProvider)
-                                      .duration
-                                      .inMilliseconds)
-                              .clamp(0.0, 1.0)
-                          : 0.0,
-                  primaryColor: Theme.of(context).colorScheme.onSurface,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
             // Barre de progression avec curseur
             Consumer(
               builder: (context, ref, child) {
@@ -465,63 +449,86 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
                 return Column(
                   children: [
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor:
-                            Theme.of(context).colorScheme.onSurface,
-                        inactiveTrackColor: Theme.of(context)
+                    const SizedBox(height: 16),
+                    // 🎵 Equalizer Animation
+                    Container(
+                      height: 80,
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: AudioEqualizerAnimation(
+                        isPlaying: audioState.isPlaying,
+                        activeColor: Theme.of(context).colorScheme.primary,
+                        inactiveColor: Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.2),
-                        thumbColor: Theme.of(context).colorScheme.onSurface,
-                        overlayColor: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.1),
-                        trackHeight: 3,
-                        thumbShape:
-                            const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      ),
-                      child: Slider(
-                        value: progress,
-                        onChanged: (value) {
-                          final newPosition = Duration(
-                            milliseconds:
-                                (value * audioState.duration.inMilliseconds)
-                                    .round(),
-                          );
-                          ref
-                              .read(audioPlayerProvider.notifier)
-                              .seek(newPosition);
-                        },
+                            .withOpacity(0.3),
+                        height: 64,
+                        barsCount: 20,
                       ),
                     ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _formatDuration(audioState.position),
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withOpacity(0.6),
-                                    fontSize: 12,
-                                  ),
-                        ),
-                        Text(
-                          _formatDuration(audioState.duration),
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withOpacity(0.6),
-                                    fontSize: 12,
-                                  ),
-                        ),
-                      ],
+                    const SizedBox(height: 8),
+                    // 🎵 Progress Bar
+                    Container(
+                      width: double.infinity,
+                      child: Column(
+                        children: [
+                          // Barre de progression
+                          Container(
+                            height: 4,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: progress,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Temps
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDuration(audioState.position),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              Text(
+                                _formatDuration(audioState.duration),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 );
@@ -547,15 +554,7 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                   ),
                   child: IconButton(
                     onPressed: () {
-                      final audioState = ref.read(audioPlayerProvider);
-                      ref.read(audioPlayerProvider.notifier).seek(
-                            Duration(
-                              milliseconds: (audioState
-                                          .position.inMilliseconds -
-                                      10000)
-                                  .clamp(0, audioState.duration.inMilliseconds),
-                            ),
-                          );
+                      ref.read(audioPlayerProvider.notifier).seekBackward();
                     },
                     icon: Icon(
                       Icons.replay_10,
@@ -583,7 +582,6 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                   ),
                   child: IconButton(
                     onPressed: () {
-                      final audioState = ref.read(audioPlayerProvider);
                       ref
                           .read(audioPlayerProvider.notifier)
                           .seek(Duration.zero);
@@ -627,11 +625,24 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                             ref.read(audioPlayerProvider.notifier).play();
                           }
                         },
-                        icon: Icon(
-                          audioState.isPlaying ? Icons.pause : Icons.play_arrow,
-                          color: Theme.of(context).colorScheme.surface,
-                          size: 30,
-                        ),
+                        icon: audioState.isLoading ||
+                                audioState.processingState ==
+                                    just_audio.ProcessingState.loading
+                            ? SizedBox(
+                                width: 30,
+                                height: 30,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                  color: Theme.of(context).colorScheme.surface,
+                                ),
+                              )
+                            : Icon(
+                                audioState.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                                color: Theme.of(context).colorScheme.surface,
+                                size: 30,
+                              ),
                       ),
                     );
                   },
@@ -680,15 +691,7 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                   ),
                   child: IconButton(
                     onPressed: () {
-                      final audioState = ref.read(audioPlayerProvider);
-                      ref.read(audioPlayerProvider.notifier).seek(
-                            Duration(
-                              milliseconds: (audioState
-                                          .position.inMilliseconds +
-                                      10000)
-                                  .clamp(0, audioState.duration.inMilliseconds),
-                            ),
-                          );
+                      ref.read(audioPlayerProvider.notifier).seekForward();
                     },
                     icon: Icon(
                       Icons.forward_10,
@@ -703,30 +706,77 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
                 const SizedBox(width: 16),
 
-                // Speed control
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: IconButton(
-                    onPressed: () {
-                      _showSpeedControl(context);
-                    },
-                    icon: Icon(
-                      Icons.speed,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.7),
-                      size: 20,
-                    ),
-                  ),
+                // Speed control avec indicateur
+                Consumer(
+                  builder: (context, ref, child) {
+                    final audioState = ref.watch(audioPlayerProvider);
+                    return Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: audioState.tempo != 1.0
+                            ? Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.2)
+                            : Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(22),
+                        border: audioState.tempo != 1.0
+                            ? Border.all(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 1,
+                              )
+                            : null,
+                      ),
+                      child: Stack(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              _cycleSpeed();
+                            },
+                            icon: Icon(
+                              Icons.speed,
+                              color: audioState.tempo != 1.0
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withOpacity(0.7),
+                              size: 20,
+                            ),
+                          ),
+                          if (audioState.tempo != 1.0)
+                            Positioned(
+                              bottom: 2,
+                              right: 2,
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${audioState.tempo}x',
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimary,
+                                      fontSize: 6,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -791,12 +841,10 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Partition interactive',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
+            Text('Partition interactive',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    )),
             Row(
               children: [
                 IconButton(
@@ -944,6 +992,22 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
   List<Widget> _buildLyricsContent(BuildContext context, Song song) {
     final userVoicePart = ref.read(authProvider).user?.voicePart ?? 'soprano';
+    
+    // Vérifier si les paroles sont disponibles
+    if (song.lyrics.isEmpty) {
+      return [
+        Container(
+          padding: const EdgeInsets.all(20),
+          child: const Center(
+            child: Text(
+              'Paroles non disponibles pour ce chant',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ),
+        ),
+      ];
+    }
+    
     final lyrics = song.lyrics[userVoicePart] ?? song.lyrics.values.first;
     final phonetics = song.phonetics?[userVoicePart];
     final translation = song.translation?[userVoicePart];
@@ -1117,7 +1181,7 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
           ),
         ],
       ],
-    );  
+    );
   }
 
   Widget _buildResourcesTab(BuildContext context, Song song) {
@@ -1310,7 +1374,8 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   }
 
   Widget _buildHierarchicalVoiceSelector(BuildContext context, Song song) {
-    final availableVoices = song.audioUrls.keys.toList();
+    // Utiliser la nouvelle structure hiérarchique ou fallback vers l'ancienne
+    final availableVoices = song.allAvailableVoices.keys.toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1351,289 +1416,33 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
           firstChild: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Puces de catégories de voix
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: ['Soprano', 'Alto', 'Tenor', 'Bass'].map((voice) {
-                  final isSelected =
-                      selectedVoices.contains(voice.toLowerCase());
-                  final hasAudio =
-                      song.audioUrls.containsKey(voice.toLowerCase());
-
-                  return GestureDetector(
-                    onTap: hasAudio
-                        ? () {
-                            setState(() {
-                              if (isSelected) {
-                                selectedVoices.remove(voice.toLowerCase());
-                              } else {
-                                selectedVoices.add(voice.toLowerCase());
-                              }
-                              if (selectedVoices.isEmpty) {
-                                // Au moins une voix doit être sélectionnée
-                                selectedVoices.add(voice.toLowerCase());
-                              }
-                              if (selectedVoices.length == 1) {
-                                primaryVoice = selectedVoices.first;
-                              }
-                            });
-                          }
-                        : null,
-                    child: Container(
-                      width: 70,
-                      height: 35,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.onSurface
-                            : hasAudio
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.1)
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(18),
-                        border: hasAudio
-                            ? null
-                            : Border.all(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.2),
-                              ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          voice,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.surface
-                                : hasAudio
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withOpacity(0.4),
-                            fontWeight:
-                                isSelected ? FontWeight.w700 : FontWeight.w500,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
+              // Niveau 1: Sélection des pupitres (chips horizontaux)
+              _buildVoicePartChips(context, song),
 
               const SizedBox(height: 20),
 
-              // Section sélections détaillées
-              Text(
-                'Selections',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.7),
-                    ),
-              ),
-              const SizedBox(height: 12),
-
-              // Liste des pistes audio spécifiques
-              ...selectedVoices.map((voice) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: voice == primaryVoice
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context)
-                              .colorScheme
-                              .outline
-                              .withOpacity(0.2),
-                      width: voice == primaryVoice ? 2 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: voice == primaryVoice
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          '${voice.capitalize()} ${voice.capitalize()} 2 (MIDI)',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          // TODO: Handle audio type selection
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                              value: 'midi', child: Text('MIDI')),
-                          const PopupMenuItem(value: 'mp3', child: Text('MP3')),
-                          const PopupMenuItem(
-                              value: 'maestro', child: Text('Maestro Rec.')),
-                        ],
-                        child: Icon(
-                          Icons.keyboard_arrow_down,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-
-              // Si on a seulement une voix sélectionnée, afficher l'option Maestro
-              if (selectedVoices.length == 1) ...[
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.2),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          '${selectedVoices.first.capitalize()} (Maestro Rec.)',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          // TODO: Handle maestro recording
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                              value: 'maestro', child: Text('Maestro Rec.')),
-                        ],
-                        child: Icon(
-                          Icons.keyboard_arrow_down,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 16),
-
-              // Bouton Full Choir
-              Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selectedVoices.length == availableVoices.length
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context)
+              // Niveau 2: Sélection des voix (si un pupitre est sélectionné)
+              if (selectedVoicePart != null) ...[
+                Text(
+                  'Selections',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.2),
-                    ),
-                  ),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        if (selectedVoices.length == availableVoices.length) {
-                          // Si toutes sont sélectionnées, revenir à la voix principale
-                          selectedVoices.clear();
-                          if (primaryVoice != null) {
-                            selectedVoices.add(primaryVoice!);
-                          }
-                        } else {
-                          // Sélectionner toutes les voix
-                          selectedVoices = Set.from(availableVoices);
-                        }
-                      });
-                    },
-                    child: Text(
-                      'Full Choir',
-                      style: TextStyle(
-                        color: selectedVoices.length == availableVoices.length
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                            .withOpacity(0.7),
                       ),
-                    ),
-                  ),
                 ),
-              ),
+                const SizedBox(height: 12),
+                _buildVoiceSelections(context, song, selectedVoicePart!),
+              ]
             ],
           ),
           // Version réduite quand c'est collapsed
           secondChild: Container(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              '${selectedVoices.length} voix sélectionnée${selectedVoices.length > 1 ? 's' : ''}',
+              'Voix: ${selectedVoicePart ?? "Aucune"}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context)
                         .colorScheme
@@ -1647,110 +1456,527 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
     );
   }
 
-  void _showSpeedControl(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Vitesse de lecture'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+  /// Niveau 1: Chips des pupitres (Soprano, Alto, Tenor, Bass)
+  Widget _buildVoicePartChips(BuildContext context, Song song) {
+    if (song.voiceParts == null) return Container();
+
+    return Wrap(
+      spacing: 8,
+      children: song.voiceParts!.entries.map((partEntry) {
+        final partId = partEntry.key;
+        final voicePart = partEntry.value;
+        final isSelected = selectedVoicePart == partId;
+
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              selectedVoicePart = partId;
+              selectedVoices.clear(); // Clear previous voice selection
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Colors.black
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected
+                    ? Colors.black
+                    : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            child: Text(
+              voicePart.key,
+              style: TextStyle(
+                color: isSelected
+                    ? Colors.white
+                    : Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// Niveau 2: Liste des voix disponibles pour le pupitre sélectionné
+  Widget _buildVoiceSelections(
+      BuildContext context, Song song, String voicePartId) {
+    final voicePart = song.voiceParts?[voicePartId];
+    if (voicePart == null) return Container();
+
+    return Column(
+      children: voicePart.voices.entries.map((voiceEntry) {
+        final voiceId = voiceEntry.key;
+        final voice = voiceEntry.value;
+        final isSelected = primaryVoice == voiceId;
+
+        return GestureDetector(
+          onTap: () async {
+            setState(() {
+              selectedVoices.clear();
+              selectedVoices.add(voiceId);
+              primaryVoice = voiceId;
+            });
+
+            // Jouer immédiatement la voix sélectionnée
+            await ref.read(audioPlayerProvider.notifier).playSong(
+                song, voicePartId); // Utilise le partId pour l'audio player
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  : Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '${voice.label} (MP3)',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  void _cycleSpeed() {
+    final currentSpeed = ref.read(audioPlayerProvider).tempo;
+    const speeds = [1.0, 1.25, 1.5, 0.75, 0.5];
+
+    final currentIndex = speeds.indexOf(currentSpeed);
+    final nextIndex = (currentIndex + 1) % speeds.length;
+    final nextSpeed = speeds[nextIndex];
+
+    ref.read(audioPlayerProvider.notifier).setTempo(nextSpeed);
+  }
+
+  /// Affichage hiérarchique des voix (nouvelle structure)
+  Widget _buildHierarchicalVoiceChips(BuildContext context, Song song) {
+    if (song.voiceParts == null) return Container();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: song.voiceParts!.entries.map((partEntry) {
+        final partId = partEntry.key;
+        final voicePart = partEntry.value;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(
-              title: const Text('0.5x'),
-              onTap: () {
-                // TODO: Set speed to 0.5x
-                Navigator.pop(context);
-              },
+            // Titre du pupitre
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                voicePart.key,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
             ),
-            ListTile(
-              title: const Text('0.75x'),
-              onTap: () {
-                // TODO: Set speed to 0.75x
-                Navigator.pop(context);
-              },
+            // Voix du pupitre
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: voicePart.voices.entries.map((voiceEntry) {
+                final voiceId = voiceEntry.key;
+                final voice = voiceEntry.value;
+                final isSelected = selectedVoices.contains(voiceId);
+
+                return GestureDetector(
+                  onTap: () async {
+                    setState(() {
+                      if (isSelected) {
+                        selectedVoices.remove(voiceId);
+                      } else {
+                        selectedVoices.add(voiceId);
+                      }
+                      if (selectedVoices.isEmpty) {
+                        selectedVoices.add(voiceId);
+                      }
+                      if (selectedVoices.length == 1) {
+                        primaryVoice = selectedVoices.first;
+                      }
+                    });
+
+                    if (selectedVoices.length == 1) {
+                      await ref
+                          .read(audioPlayerProvider.notifier)
+                          .playSong(song, selectedVoices.first);
+                    }
+                  },
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withOpacity(0.3),
+                      ),
+                    ),
+                    child: Text(
+                      voice.label,
+                      style: TextStyle(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
-            ListTile(
-              title: const Text('1.0x (Normal)'),
-              onTap: () {
-                // TODO: Set speed to 1.0x
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('1.25x'),
-              onTap: () {
-                // TODO: Set speed to 1.25x
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('1.5x'),
-              onTap: () {
-                // TODO: Set speed to 1.5x
-                Navigator.pop(context);
-              },
-            ),
+            const SizedBox(height: 16),
           ],
+        );
+      }).toList(),
+    );
+  }
+
+  /// Affichage simple des voix (ancienne structure)
+  Widget _buildSimpleVoiceChips(
+      BuildContext context, Song song, List<String> availableVoices) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: availableVoices.map((voiceKey) {
+        final voiceLabels = {
+          'soprano': 'Soprano',
+          'alto': 'Alto',
+          'tenor': 'Ténor',
+          'bass': 'Basse',
+        };
+        final voice = voiceLabels[voiceKey.toLowerCase()] ??
+            voiceKey[0].toUpperCase() + voiceKey.substring(1);
+        final isSelected = selectedVoices.contains(voiceKey.toLowerCase());
+
+        return GestureDetector(
+          onTap: () async {
+            setState(() {
+              if (isSelected) {
+                selectedVoices.remove(voiceKey.toLowerCase());
+              } else {
+                selectedVoices.add(voiceKey.toLowerCase());
+              }
+              if (selectedVoices.isEmpty) {
+                selectedVoices.add(voiceKey.toLowerCase());
+              }
+              if (selectedVoices.length == 1) {
+                primaryVoice = selectedVoices.first;
+              }
+            });
+
+            if (selectedVoices.length == 1) {
+              final newVoicePart = selectedVoices.first;
+              await ref
+                  .read(audioPlayerProvider.notifier)
+                  .playSong(song, newVoicePart);
+            }
+          },
+          child: Container(
+            width: 70,
+            height: 35,
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Center(
+              child: Text(
+                voice,
+                style: TextStyle(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.surface
+                      : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  List<double> _generateFallbackWaveform() {
+    // Fallback simple si pas de données de waveform disponibles
+    return List.generate(50, (index) => 0.3 + 0.4 * ((index * 7) % 10 / 10));
+  }
+
+  /// Barre de progression fallback si pas de waveform
+  Widget _buildFallbackProgressBar(BuildContext context, double progress) {
+    return Container(
+      width: double.infinity,
+      height: 3,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(1.5),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: progress,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primary,
+            borderRadius: BorderRadius.circular(1.5),
+          ),
         ),
       ),
     );
   }
 }
 
-// CustomPainter pour la visualisation en forme d'onde
-class WaveformPainter extends CustomPainter {
+// CustomPainter pour la visualisation en forme d'onde style spectrogramme
+class SpectrogramWaveformPainter extends CustomPainter {
+  final List<double> samples;
   final double progress;
-  final Color primaryColor;
-  final Color backgroundColor;
+  final Color activeColor;
+  final Color inactiveColor;
+  final double scrollOffset;
+  final double viewportWidth;
 
-  WaveformPainter({
+  SpectrogramWaveformPainter({
+    required this.samples,
     required this.progress,
-    required this.primaryColor,
-    required this.backgroundColor,
+    required this.activeColor,
+    required this.inactiveColor,
+    this.scrollOffset = 0.0,
+    this.viewportWidth = 300.0,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) return;
+
     final paint = Paint()
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.butt;
 
-    final progressPoint = size.width * progress;
-    final barCount = 60;
-    final barWidth = size.width / barCount;
+    // Calculer la position du curseur de lecture qui suit le scroll
+    final totalWidth = size.width;
+    final barWidth = totalWidth / samples.length;
 
-    for (int i = 0; i < barCount; i++) {
-      final x = i * barWidth + barWidth / 2;
-      final isActive = x <= progressPoint;
+    // Position absolue du curseur de lecture dans le spectrogramme complet
+    final absoluteProgressPosition = totalWidth * progress;
 
-      // Générer une hauteur aléatoire mais cohérente pour chaque barre
-      final heightFactor = _generateHeight(i, barCount);
-      final barHeight = size.height * heightFactor;
+    // Position relative du curseur par rapport au viewport visible
+    final relativeProgressPosition = absoluteProgressPosition - scrollOffset;
 
-      paint.color = isActive ? primaryColor : backgroundColor;
+    for (int i = 0; i < samples.length; i++) {
+      final x = i * barWidth;
+
+      // Une barre est active si elle est avant la position de lecture
+      final isActive = x <= absoluteProgressPosition;
+
+      // Effet de highlight pour la barre actuellement en cours de lecture
+      final isCurrentlyPlaying =
+          (x - barWidth / 2) <= relativeProgressPosition &&
+              relativeProgressPosition <= (x + barWidth / 2) &&
+              relativeProgressPosition >= 0 &&
+              relativeProgressPosition <= viewportWidth;
+
+      // Normaliser la hauteur entre 0.1 et 1.0 pour éviter les barres trop petites
+      final normalizedHeight = (samples[i] * 0.9 + 0.1).clamp(0.1, 1.0);
+      final barHeight = size.height * normalizedHeight;
+
+      // Choisir la couleur appropriée
+      if (isCurrentlyPlaying) {
+        // Couleur de highlight pour la barre en cours de lecture
+        paint.color = activeColor.withOpacity(1.0);
+      } else if (isActive) {
+        // Couleur active pour les barres déjà lues
+        paint.color = activeColor.withOpacity(0.7);
+      } else {
+        // Couleur inactive pour les barres pas encore lues
+        paint.color = inactiveColor;
+      }
+
+      // Dessiner des barres verticales fines comme un spectrogramme
+      canvas.drawLine(
+        Offset(x + barWidth / 2, (size.height - barHeight) / 2),
+        Offset(x + barWidth / 2, (size.height + barHeight) / 2),
+        paint,
+      );
+    }
+
+    // Dessiner un curseur de lecture vertical fin
+    if (relativeProgressPosition >= 0 &&
+        relativeProgressPosition <= viewportWidth) {
+      final cursorPaint = Paint()
+        ..color = activeColor
+        ..strokeWidth = 2.0;
 
       canvas.drawLine(
-        Offset(x, (size.height - barHeight) / 2),
-        Offset(x, (size.height + barHeight) / 2),
-        paint,
+        Offset(relativeProgressPosition, 0),
+        Offset(relativeProgressPosition, size.height),
+        cursorPaint,
       );
     }
   }
 
-  double _generateHeight(int index, int total) {
-    // Générer une forme d'onde réaliste basée sur l'index
-    final normalizedIndex = index / total;
+  @override
+  bool shouldRepaint(SpectrogramWaveformPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.samples != samples ||
+        oldDelegate.scrollOffset != scrollOffset ||
+        oldDelegate.viewportWidth != viewportWidth;
+  }
+}
 
-    // Créer une courbe qui ressemble à une forme d'onde audio
-    final base = (0.3 + 0.7 * (1 - (normalizedIndex - 0.5).abs() * 2));
-    final variation = 0.3 * ((index * 37) % 100) / 100; // Pseudo-aléatoire
+// Widget d'animation equalizer classique
+class AudioEqualizerAnimation extends StatefulWidget {
+  final bool isPlaying;
+  final Color activeColor;
+  final Color inactiveColor;
+  final double height;
+  final int barsCount;
 
-    return (base + variation).clamp(0.1, 1.0);
+  const AudioEqualizerAnimation({
+    super.key,
+    required this.isPlaying,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.height,
+    this.barsCount = 20,
+  });
+
+  @override
+  State<AudioEqualizerAnimation> createState() => _AudioEqualizerAnimationState();
+}
+
+class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late List<double> _barHeights;
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+
+    // Initialiser les hauteurs des barres
+    _barHeights = List.generate(
+      widget.barsCount, 
+      (index) => 0.2 + Random().nextDouble() * 0.8,
+    );
+
+    _startAnimation();
+  }
+
+  void _startAnimation() {
+    _timer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
+      if (widget.isPlaying && mounted) {
+        setState(() {
+          // Générer de nouvelles hauteurs aléaoires pour chaque barre
+          _barHeights = List.generate(
+            widget.barsCount,
+            (index) => 0.1 + Random().nextDouble() * 0.9,
+          );
+        });
+      }
+    });
   }
 
   @override
-  bool shouldRepaint(WaveformPainter oldDelegate) {
-    return oldDelegate.progress != progress;
+  void didUpdateWidget(AudioEqualizerAnimation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (!widget.isPlaying) {
+        // Arrêter l'animation et réduire les barres
+        setState(() {
+          _barHeights = List.generate(widget.barsCount, (index) => 0.1);
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: widget.height,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(widget.barsCount, (index) {
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeInOut,
+            width: 3,
+            height: _barHeights[index] * widget.height,
+            decoration: BoxDecoration(
+              color: widget.isPlaying 
+                  ? widget.activeColor
+                  : widget.inactiveColor,
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          );
+        }),
+      ),
+    );
   }
 }
 
