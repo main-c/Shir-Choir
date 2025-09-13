@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
+import 'package:just_audio/just_audio.dart';
 import '../../features/choriste/models/song_model.dart';
+import '../../features/choriste/models/song_extensions.dart';
 import 'storage_service.dart';
 import 'storage_service_factory.dart';
 import 'local_storage_service.dart';
@@ -18,8 +20,9 @@ class DownloadService {
   /// Télécharge et installe un chant complet
   Future<Song> downloadAndInstallSong(String songId, int version) async {
     try {
-      // 1. Télécharger le fichier ZIP depuis Firebase
-      final zipData = await _storageService.downloadSongPackage(songId, version);
+      // 1. Télécharger le fichier ZIP avec la taille réelle
+      final downloadResult = await _storageService.downloadSongPackage(songId, version);
+      final zipData = downloadResult.data;
       
       // 2. Créer le répertoire local pour ce chant
       final songPath = '${_localService.songsDirectory}/$songId';
@@ -80,14 +83,18 @@ class DownloadService {
       // Corriger les URLs audio avec les vrais fichiers présents
       await _fixAudioPaths(metadata, songPath);
       
-      // 5. Créer l'objet Song avec les chemins locaux
+      // 4.5. Extraire les durées audio de chaque fichier
+      final audioDurations = await _extractAudioDurations(metadata, songPath);
+      metadata['audioDurations'] = audioDurations;
+      
+      // 5. Créer l'objet Song avec les chemins locaux et la taille réelle
       final song = Song.fromJson(
         metadata,
         availability: SongAvailability.downloadedAndReady,
         version: version,
         localPath: songPath,
         lastSync: DateTime.now(),
-      );
+      ).copyWith(sizeMb: downloadResult.sizeMb);
       
       // 6. Sauvegarder en base de données
       await _localService.storeSong(song);
@@ -230,6 +237,68 @@ class DownloadService {
       }
     } catch (e) {
       print('❌ Erreur lors de la correction des chemins audio: $e');
+    }
+  }
+
+  /// Extrait la durée de chaque fichier audio pendant le téléchargement
+  Future<Map<String, int>> _extractAudioDurations(Map<String, dynamic> metadata, String songPath) async {
+    final durations = <String, int>{};
+    
+    try {
+      final audioUrls = metadata['audioUrls'] as Map<String, dynamic>?;
+      if (audioUrls == null) return durations;
+      
+      print('🎵 Extraction des durées audio...');
+      
+      // Créer un AudioPlayer temporaire pour l'extraction
+      final player = AudioPlayer();
+      
+      try {
+        for (final entry in audioUrls.entries) {
+          final voicePart = entry.key;
+          final relativePath = entry.value as String;
+          final audioFilePath = '$songPath/$relativePath';
+          
+          print('🎵 Extraction durée pour $voicePart: $audioFilePath');
+          
+          final audioFile = File(audioFilePath);
+          if (await audioFile.exists()) {
+            try {
+              // Charger le fichier audio
+              await player.setFilePath(audioFilePath);
+              
+              // Attendre que la durée soit disponible
+              Duration? duration = player.duration;
+              if (duration == null) {
+                // Attendre un peu pour que la durée soit détectée
+                await Future.delayed(const Duration(milliseconds: 500));
+                duration = player.duration;
+              }
+              
+              if (duration != null) {
+                durations[voicePart] = duration.inSeconds;
+                print('✅ Durée extraite pour $voicePart: ${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}');
+              } else {
+                print('⚠️ Impossible d\'extraire la durée pour $voicePart');
+              }
+            } catch (e) {
+              print('❌ Erreur lors de l\'extraction de la durée pour $voicePart: $e');
+            }
+          } else {
+            print('❌ Fichier audio introuvable: $audioFilePath');
+          }
+        }
+      } finally {
+        // Libérer le player temporaire
+        await player.dispose();
+      }
+      
+      print('🎵 Durées audio extraites: $durations');
+      return durations;
+      
+    } catch (e) {
+      print('❌ Erreur lors de l\'extraction des durées audio: $e');
+      return durations;
     }
   }
 }
