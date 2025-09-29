@@ -1,6 +1,6 @@
 name: shir_choir
 description: Interface de gestion de chorale moderne et spirituelle
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -47,6 +47,7 @@ dependencies:
   # Icons & UI
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
+  syncfusion_flutter_pdfviewer: ^31.1.19
 
 dev_dependencies:
   flutter_test:
@@ -54,12 +55,19 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   slang_build_runner: ^3.31.0
   build_runner: ^2.4.12
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.10
 
 flutter:
   uses-material-design: true
   assets:
     - assets/audio/
     - assets/images/
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/shirbook_icon.png"
 
 slang:
   base_locale: fr

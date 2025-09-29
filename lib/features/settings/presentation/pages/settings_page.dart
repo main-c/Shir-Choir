@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/theme_provider.dart';
 import '../../../../i18n/strings.g.dart';
 import '../../../auth/providers/auth_provider.dart';
@@ -145,12 +144,12 @@ class SettingsPage extends ConsumerWidget {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 16),
-                  
-                  ListTile(
+
+                  const ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.info_outline),
                     title: const Text('Version'),
-                    subtitle: const Text('1.0.0'),
+                    subtitle: const Text('1.0.2'),
                   ),
                   
                   ListTile(
