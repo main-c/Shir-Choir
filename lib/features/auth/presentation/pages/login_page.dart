@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:toastification/toastification.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../i18n/strings.g.dart';
 import '../../providers/auth_provider.dart';
-import '../widgets/voice_part_selector.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -22,6 +19,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String _selectedRole = 'choriste';
   String? _selectedVoicePart;
 
+  bool get _isFormValid {
+    final nameValid = _nameController.text.trim().isNotEmpty;
+    final voicePartValid =
+        _selectedRole == 'maestro' || _selectedVoicePart != null;
+    return nameValid && voicePartValid;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -30,7 +34,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     if (_selectedRole == 'choriste' && _selectedVoicePart == null) {
       toastification.show(
         context: context,
@@ -43,24 +47,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     await ref.read(authProvider.notifier).login(
-      name: _nameController.text.trim(),
-      role: _selectedRole,
-      voicePart: _selectedVoicePart,
-    );
+          name: _nameController.text.trim(),
+          role: _selectedRole,
+          voicePart: _selectedVoicePart,
+        );
+
+    // Check if widget is still mounted after async operation
+    if (!mounted) return;
 
     final authState = ref.read(authProvider);
     if (authState.error != null) {
-      toastification.show(
-        context: context,
-        title: Text('Erreur de connexion'),
-        description: Text(authState.error!),
-        type: ToastificationType.error,
-        style: ToastificationStyle.fillColored,
-        autoCloseDuration: const Duration(seconds: 3),
-      );
+      if (mounted) {
+        toastification.show(
+          context: context,
+          title: Text('Erreur de connexion'),
+          description: Text(authState.error!),
+          type: ToastificationType.error,
+          style: ToastificationStyle.fillColored,
+          autoCloseDuration: const Duration(seconds: 3),
+        );
+      }
     } else if (authState.isAuthenticated) {
-      final route = _selectedRole == 'maestro' ? '/maestro' : '/choriste';
-      context.go(route);
+      if (mounted) {
+        final route = _selectedRole == 'maestro' ? '/maestro' : '/choriste';
+        context.go(route);
+      }
     }
   }
 
@@ -68,72 +79,74 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final t = Translations.of(context);
-    
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      body: Container(
-        decoration:  BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary,
-              Theme.of(context).colorScheme.secondary,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
+      body: SafeArea(
+        child: Center(
+          child: Container(
+            width: 360,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Form(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header simple
+                  Image.asset(
+                    'assets/images/shirbook_icon.png',
+                    fit: BoxFit.fill,
+                    width: 80,
+                    height: 80,
+                  ),
+                  const SizedBox(height: 16),
+
+                  Text(
+                    t.app.title,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      // Use theme primary color for dark/light support
+                      color: null,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  Text(
+                    t.app.subtitle,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Formulaire
+                  Form(
                     key: _formKey,
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Logo et titre
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child:  Icon(
-                            Icons.music_note,
-                            size: 40,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        
-                        Text(
-                          t.app.title,
-                          style: Theme.of(context).textTheme.headlineMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        
-                        Text(
-                          t.app.subtitle,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-                        
                         // Champ nom
                         TextFormField(
                           controller: _nameController,
+                          onChanged: (value) => setState(() {}),
                           decoration: InputDecoration(
                             labelText: t.auth.enterName,
                             hintText: t.auth.namePlaceholder,
                             prefixIcon: const Icon(Icons.person_outline),
+                            border: const OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(12)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(12)),
+                              borderSide: BorderSide(
+                                  color: colorScheme.primary, width: 2),
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
@@ -142,19 +155,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 24),
-                        
+                        const SizedBox(height: 20),
+
                         // Sélection du rôle
                         Text(
-                          t.auth.selectRole,
-                          style: Theme.of(context).textTheme.titleMedium,
+                          'Rôle',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        
+                        const SizedBox(height: 12),
+
                         Row(
                           children: [
                             Expanded(
-                              child: _RoleCard(
+                              child: _SimpleRoleCard(
                                 title: t.auth.choriste,
                                 icon: Icons.people_outline,
                                 isSelected: _selectedRole == 'choriste',
@@ -166,69 +183,153 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 },
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(
-                              child: _RoleCard(
+                              child: _SimpleRoleCard(
                                 title: t.auth.maestro,
-                                icon: Icons.music_video_outlined,
+                                icon: Icons.music_note,
                                 isSelected: _selectedRole == 'maestro',
+                                isDisabled: true,
                                 onTap: () {
-                                  setState(() {
-                                    _selectedRole = 'maestro';
-                                    _selectedVoicePart = null;
-                                  });
+                                  toastification.show(
+                                    context: context,
+                                    title: const Text(
+                                        'Fonctionnalité en développement'),
+                                    type: ToastificationType.info,
+                                    style: ToastificationStyle.fillColored,
+                                    autoCloseDuration:
+                                        const Duration(seconds: 3),
+                                  );
                                 },
                               ),
                             ),
                           ],
                         ),
-                        
-                        // Sélection du pupitre (si choriste)
+
+                        // Menu déroulant pour pupitre (si choriste)
                         if (_selectedRole == 'choriste') ...[
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
                           Text(
-                            t.auth.selectVoicePart,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            'Pupitre',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface,
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          VoicePartSelector(
-                            selectedVoicePart: _selectedVoicePart,
-                            onVoicePartSelected: (voicePart) {
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            value: _selectedVoicePart,
+                            decoration: InputDecoration(
+                              border: const OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(12)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(12)),
+                                borderSide: BorderSide(
+                                    color: colorScheme.primary, width: 2),
+                              ),
+                            ),
+                            hint: Text(
+                              'Sélectionnez votre pupitre',
+                              style: TextStyle(
+                                color: colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                            dropdownColor: colorScheme.surface,
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                            ),
+                            iconEnabledColor: colorScheme.onSurface,
+                            items: [
+                              DropdownMenuItem(
+                                value: 'soprano',
+                                child: Text(
+                                  'Soprano',
+                                  style:
+                                      TextStyle(color: colorScheme.onSurface),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'alto',
+                                child: Text(
+                                  'Alto',
+                                  style:
+                                      TextStyle(color: colorScheme.onSurface),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'tenor',
+                                child: Text(
+                                  'Ténor',
+                                  style:
+                                      TextStyle(color: colorScheme.onSurface),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'bass',
+                                child: Text(
+                                  'Basse',
+                                  style:
+                                      TextStyle(color: colorScheme.onSurface),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
                               setState(() {
-                                _selectedVoicePart = voicePart;
+                                _selectedVoicePart = value;
                               });
+                            },
+                            validator: (value) {
+                              if (_selectedRole == 'choriste' &&
+                                  value == null) {
+                                return 'Veuillez sélectionner votre pupitre';
+                              }
+                              return null;
                             },
                           ),
                         ],
-                        
-                        const SizedBox(height: 32),
-                        
-                        // Bouton de connexion
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: authState.isLoading ? null : _handleLogin,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: authState.isLoading
-                                ? SpinKitThreeBounce(
-                                    color: Theme.of(context).colorScheme.onPrimary,
-                                    size: 20,
-                                  )
-                                : Text(
-                                    t.auth.login,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                          ),
-                        ),
+
+                        const SizedBox(height: 45),
                       ],
                     ),
                   ),
-                ),
+
+                  // Bouton en bas
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: authState.isLoading || !_isFormValid
+                          ? null
+                          : _handleLogin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: authState.isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              t.auth.login,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -238,31 +339,55 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-class _RoleCard extends StatelessWidget {
+class _SimpleRoleCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final bool isSelected;
+  final bool isDisabled;
   final VoidCallback onTap;
 
-  const _RoleCard({
+  const _SimpleRoleCard({
     required this.title,
     required this.icon,
     required this.isSelected,
     required this.onTap,
+    this.isDisabled = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final bool isDisabledState = isDisabled;
+    final bool isSelectedState = isSelected && !isDisabledState;
+
+    final Color cardBackgroundColor = isSelectedState
+        ? colorScheme.primary.withOpacity(0.1)
+        : theme.colorScheme.surfaceVariant.withOpacity(
+            theme.brightness == Brightness.dark ? 0.2 : 0.5,
+          );
+    final Color borderColor =
+        isSelectedState ? colorScheme.primary : theme.colorScheme.outline;
+    final Color iconColor = isSelectedState
+        ? colorScheme.primary
+        : (isDisabledState
+            ? theme.colorScheme.onSurface.withOpacity(0.38)
+            : theme.colorScheme.onSurfaceVariant);
+    final Color textColor = isSelectedState
+        ? colorScheme.primary
+        : (isDisabledState
+            ? theme.colorScheme.onSurface.withOpacity(0.38)
+            : theme.colorScheme.onSurface);
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceContainerHighest,
+          color: cardBackgroundColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
+            color: borderColor,
             width: 2,
           ),
         ),
@@ -270,17 +395,26 @@ class _RoleCard extends StatelessWidget {
           children: [
             Icon(
               icon,
-              size: 32,
-              color: isSelected ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.primary,
+              size: 20,
+              color: iconColor,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               title,
               style: TextStyle(
-                color: isSelected ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.primary,
+                color: textColor,
                 fontWeight: FontWeight.w600,
+                fontSize: 12,
               ),
+              textAlign: TextAlign.center,
             ),
+            // if (isDisabled) ...[
+            //   const SizedBox(height: 4),
+            //   Text(
+            //     '🚧',
+            //     style: TextStyle(fontSize: 12),
+            //   ),
+            // ],
           ],
         ),
       ),
