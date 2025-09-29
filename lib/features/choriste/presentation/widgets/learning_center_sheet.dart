@@ -4,13 +4,29 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
-import 'package:flutter_audio_waveforms/flutter_audio_waveforms.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
-import '../../../../i18n/strings.g.dart';
 import '../../../audio/providers/audio_player_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../models/song_model.dart';
 import '../../providers/songs_provider.dart';
+
+// Classe pour représenter une note du Maestro avec catégorie
+class MaestroNote {
+  final String category;
+  final String title;
+  final String content;
+  final IconData icon;
+  final Color color;
+
+  MaestroNote({
+    required this.category,
+    required this.title,
+    required this.content,
+    required this.icon,
+    required this.color,
+  });
+}
 
 class LearningCenterSheet extends ConsumerStatefulWidget {
   final String songId;
@@ -39,7 +55,7 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   String? primaryVoice; // Voix principale sélectionnée
   bool showTranslation = false;
   bool showPhonetics = true;
-  bool _isPlayerCollapsed = false;
+  bool _showMiniPlayer = false; // Mini-player en bas quand on scroll
   bool _isVoiceSelectorExpanded = true;
 
   @override
@@ -77,24 +93,41 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Initialiser avec la voix de l'utilisateur une fois que ref est disponible
-    if (selectedVoices.isEmpty) {
+    // Initialiser avec l'état actuel du lecteur audio
+    final audioState = ref.read(audioPlayerProvider);
+
+    if (audioState.currentSongId == widget.songId && selectedVoices.isEmpty) {
+      // Une voix de ce song est déjà en train de jouer
+      final currentVoicePart = audioState.currentVoicePart;
+
+      if (currentVoicePart != null) {
+        setState(() {
+          selectedVoicePart = currentVoicePart;
+          selectedVoices.add(currentVoicePart);
+          primaryVoice = currentVoicePart;
+        });
+      }
+    } else if (selectedVoices.isEmpty) {
+      // Fallback : initialiser avec la voix de l'utilisateur
       final user = ref.read(authProvider).user;
       if (user?.voicePart != null) {
-        primaryVoice = user!.voicePart;
-        selectedVoices.add(user.voicePart!);
+        setState(() {
+          selectedVoicePart = user!.voicePart;
+          primaryVoice = user.voicePart;
+          selectedVoices.add(user.voicePart!);
+        });
       }
     }
   }
 
   void _onScroll() {
-    const threshold = 50.0; // Seuil de scroll plus bas pour plus de fluidité
-    final shouldCollapse = _scrollController.offset > threshold;
+    const threshold = 500.0; // Seuil pour activer le mini-player
+    final shouldShowMini = _scrollController.offset > threshold;
 
-    if (shouldCollapse != _isPlayerCollapsed) {
+    if (shouldShowMini != _showMiniPlayer) {
       if (mounted) {
         setState(() {
-          _isPlayerCollapsed = shouldCollapse;
+          _showMiniPlayer = shouldShowMini;
         });
       }
     }
@@ -106,6 +139,10 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
     _tabController.dispose();
     _scrollController.dispose();
     _waveformScrollController.dispose();
+
+    // Nettoyer le cache PDF pour éviter les fuites mémoire
+    _pdfCache.clear();
+
     super.dispose();
   }
 
@@ -130,31 +167,63 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
         return Transform.translate(
           offset: Offset(
               0, MediaQuery.of(context).size.height * _slideAnimation.value),
-          child: Scaffold(
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            body: NestedScrollView(
-              controller: _scrollController,
-              headerSliverBuilder:
-                  (BuildContext context, bool innerBoxIsScrolled) {
-                return <Widget>[
-                  SliverToBoxAdapter(
-                    child: _buildHeader(context, song),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildExpandablePlayer(context, song),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildTabBar(context),
-                  ),
-                ];
-              },
-              body: TabBarView(
-                controller: _tabController,
+          child: SafeArea(
+            child: Scaffold(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              body: Stack(
                 children: [
-                  _buildPartitionTab(context, song),
-                  _buildLyricsTab(context, song),
-                  _buildMaestroNotesTab(context, song),
-                  _buildResourcesTab(context, song),
+                  // Contenu principal avec scroll coordonné
+                  NestedScrollView(
+                    controller: _scrollController,
+                    physics: const ClampingScrollPhysics(),
+                    headerSliverBuilder:
+                        (BuildContext context, bool innerBoxIsScrolled) {
+                      return <Widget>[
+                        // Header qui peut scroller vers le haut
+                        SliverToBoxAdapter(
+                          child: _buildHeader(context, song),
+                        ),
+                        // Lecteur qui peut scroller vers le haut
+                        SliverToBoxAdapter(
+                          child: _buildCompactPlayer(context, song),
+                        ),
+                        // Séparation
+                       const SliverToBoxAdapter(
+                          child:  Column(
+                            children: [
+                              SizedBox(height: 24),
+                            ],
+                          ),
+                        ),
+                        // Tab Bar - reste fixé en haut quand on scroll
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _SliverTabBarDelegate(
+                            child: _buildTabBar(context),
+                          ),
+                        ),
+                      ];
+                    },
+                    body: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildPartitionTab(context, song),
+                        _buildLyricsTab(context, song),
+                        _buildMaestroNotesTab(context, song),
+                        _buildResourcesTab(context, song),
+                      ],
+                    ),
+                  ),
+
+                  // Mini-player en overlay fixe en bas (style YouTube/Spotify)
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    bottom: _showMiniPlayer ? 0 : -100,
+                    left: 0,
+                    right: 0,
+                    child: _buildMiniPlayer(context, song),
+                  ),
                 ],
               ),
             ),
@@ -281,163 +350,289 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
     );
   }
 
-  Widget _buildExpandablePlayer(BuildContext context, Song song) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      height: _isPlayerCollapsed ? 60 : null,
-      child: _isPlayerCollapsed
-          ? _buildMiniPlayer(context, song)
-          : _buildCompactPlayer(context, song),
-    );
-  }
-
   Widget _buildMiniPlayer(BuildContext context, Song song) {
-    return Container(
-      height: 60,
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Progress bar verticale
-          Consumer(
-            builder: (context, ref, child) {
-              final audioState = ref.watch(audioPlayerProvider);
-              final progress = audioState.duration.inMilliseconds > 0
-                  ? (audioState.position.inMilliseconds /
-                          audioState.duration.inMilliseconds)
-                      .clamp(0.0, 1.0)
-                  : 0.0;
+    return Consumer(
+      builder: (context, ref, child) {
+        final audioState = ref.watch(audioPlayerProvider);
+        final progress = audioState.duration.inMilliseconds > 0
+            ? (audioState.position.inMilliseconds /
+                    audioState.duration.inMilliseconds)
+                .clamp(0.0, 1.0)
+            : 0.0;
 
-              return Container(
-                width: 4,
-                height: 60,
-                decoration: BoxDecoration(
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    bottomLeft: Radius.circular(12),
+        return Container(
+          height: 90,
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(children: [
+            // Progress bar fine en haut
+            Container(
+              height: 2,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: progress,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(12)),
                   ),
                 ),
-                child: FractionallySizedBox(
-                  alignment: Alignment.bottomCenter,
-                  heightFactor: progress,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        bottomLeft: Radius.circular(12),
+              ),
+            ),
+            // Contenu principal
+            Expanded(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  children: [
+                    // Vignette d'album (côté gauche)
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Theme.of(context).colorScheme.primary,
+                            Theme.of(context).colorScheme.secondary,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.music_note,
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        size: 20,
                       ),
                     ),
-                  ),
-                ),
-              );
-            },
-          ),
 
-          const SizedBox(width: 12),
+                    const SizedBox(width: 12),
 
-          // Play/Pause button
-          Consumer(
-            builder: (context, ref, child) {
-              final audioState = ref.watch(audioPlayerProvider);
-              return Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: IconButton(
-                  onPressed: () {
-                    if (audioState.isPlaying) {
-                      ref.read(audioPlayerProvider.notifier).pause();
-                    } else {
-                      ref.read(audioPlayerProvider.notifier).play();
-                    }
-                  },
-                  icon: Icon(
-                    audioState.isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    size: 20,
-                  ),
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(width: 12),
-
-          // Song info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  song.title,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Consumer(
-                  builder: (context, ref, child) {
-                    final audioState = ref.watch(audioPlayerProvider);
-                    return Text(
-                      '${_formatDuration(audioState.position)} / ${_formatDuration(audioState.duration)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
+                    // Titre et informations (centre-gauche)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Ligne 1: Titre + Voix courante
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  song.title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Indicateur de voix courante
+                              Consumer(
+                                builder: (context, ref, child) {
+                                  final audioState =
+                                      ref.watch(audioPlayerProvider);
+                                  final currentVoice = audioState
+                                          .currentVoicePart
+                                          ?.capitalize() ??
+                                      ref
+                                          .read(authProvider)
+                                          .user
+                                          ?.voicePart
+                                          ?.capitalize() ??
+                                      'Soprano';
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.campaign,
+                                          size: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          currentVoice,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+                          const SizedBox(height: 1),
+                          // Ligne 2: Compositeur + Note + Durée
+                          Text(
+                            '${song.composer} • ${song.key} • ${_formatDuration(song.duration)}',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withOpacity(0.6),
+                                    ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
 
-          // Expand button
-          IconButton(
-            onPressed: () {
-              _scrollController.animateTo(
-                0,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-            },
-            icon: Icon(
-              Icons.keyboard_arrow_up,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-            ),
-          ),
-        ],
-      ),
+                    const SizedBox(width: 12),
+
+                    // Bouton play avec animation douce (centre)
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final audioState = ref.watch(audioPlayerProvider);
+                        final isCurrentSong =
+                            audioState.currentSongId == song.id;
+                        final isPlaying = isCurrentSong && audioState.isPlaying;
+
+                        return GestureDetector(
+                          onTap: () {
+                            if (isCurrentSong) {
+                              if (isPlaying) {
+                                ref.read(audioPlayerProvider.notifier).pause();
+                              } else {
+                                ref.read(audioPlayerProvider.notifier).play();
+                              }
+                            } else {
+                              final userVoicePart =
+                                  ref.read(authProvider).user?.voicePart ??
+                                      'soprano';
+                              ref
+                                  .read(audioPlayerProvider.notifier)
+                                  .playSong(song, userVoicePart);
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: isPlaying
+                                  ? [
+                                      BoxShadow(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withOpacity(0.4),
+                                        blurRadius: 12,
+                                        spreadRadius: 0,
+                                      ),
+                                    ]
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                            ),
+                            child: Icon(
+                              isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              size: 24,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    // Icône d'expansion (côté droit)
+                    Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                      size: 24,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          ]),
+        );
+      },
     );
   }
 
   Widget _buildCompactPlayer(BuildContext context, Song song) {
     return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Column(
           children: [
-            // Barre de progression avec curseur
+            // Header minimal avec juste bouton fermer
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  onPressed: _closeSheet,
+                  icon: Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.7),
+                    size: 24,
+                  ),
+                ),
+              ],
+            ),
+
+            // Lecteur audio optimisé avec plus d'espace
             Consumer(
               builder: (context, ref, child) {
                 final audioState = ref.watch(audioPlayerProvider);
@@ -449,10 +644,9 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
                 return Column(
                   children: [
-                    const SizedBox(height: 16),
-                    // 🎵 Equalizer Animation
+                    // 🎵 Equalizer Animation plus grand
                     Container(
-                      height: 80,
+                      height: 60,
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: AudioEqualizerAnimation(
@@ -462,8 +656,8 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                             .colorScheme
                             .onSurface
                             .withOpacity(0.3),
-                        height: 64,
-                        barsCount: 20,
+                        height: 44,
+                        barsCount: 25,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -619,10 +813,17 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                       ),
                       child: IconButton(
                         onPressed: () {
-                          if (audioState.isPlaying) {
-                            ref.read(audioPlayerProvider.notifier).pause();
+                          final isCurrentSong = audioState.currentSongId == song.id;
+                          
+                          if (isCurrentSong) {
+                            if (audioState.isPlaying) {
+                              ref.read(audioPlayerProvider.notifier).pause();
+                            } else {
+                              ref.read(audioPlayerProvider.notifier).play();
+                            }
                           } else {
-                            ref.read(audioPlayerProvider.notifier).play();
+                            final userVoicePart = ref.read(authProvider).user?.voicePart ?? 'soprano';
+                            ref.read(audioPlayerProvider.notifier).playSong(song, userVoicePart);
                           }
                         },
                         icon: audioState.isLoading ||
@@ -834,283 +1035,867 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   }
 
   Widget _buildPartitionTab(BuildContext context, Song song) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        // Contrôles de la partition
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Partition interactive',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    )),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    // TODO: Zoom out
-                  },
-                  icon: const Icon(Icons.zoom_out),
+    // Récupérer la première partition PDF depuis les ressources
+    final scoreResources = song.resources?.scores
+            ?.where((resource) => resource.type == 'pdf')
+            .toList() ??
+        [];
+
+    final hasPartition = scoreResources.isNotEmpty;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, _showMiniPlayer ? 110 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre principal
+          Text(
+            'Partition',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hasPartition
+                ? 'Balayez horizontalement pour tourner les pages'
+                : 'Aucune partition disponible',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color:
                       Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  fontFamily: 'Poppins',
                 ),
-                IconButton(
-                  onPressed: () {
-                    // TODO: Zoom in
-                  },
-                  icon: const Icon(Icons.zoom_in),
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+          ),
+          const SizedBox(height: 24),
+
+          if (hasPartition) ...[
+            // Viewer PDF horizontal intégré avec bouton plein écran
+            Container(
+              height: 600, // Hauteur fixe pour le viewer
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                  width: 1,
                 ),
-              ],
+              ),
+              child: Stack(
+                children: [
+                  // PDF Viewer
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: _buildHorizontalPdfViewer(scoreResources.first),
+                  ),
+                  
+                  // Bouton plein écran en overlay
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _openPdfFullScreen(context, scoreResources.first),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.fullscreen,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // État vide élégant
+            Container(
+              height: 400,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.picture_as_pdf_outlined,
+                    size: 64,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.4),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Aucune partition disponible',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Poppins',
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.7),
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'La partition PDF sera affichée ici\navec navigation horizontale',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.5),
+                          fontFamily: 'Poppins',
+                          height: 1.5,
+                        ),
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-        const SizedBox(height: 16),
-
-        // Placeholder pour partition interactive
-        Container(
-          height: 300,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.library_music,
-                size: 32,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Partition interactive',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.6),
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'La note en cours sera mise en évidence\nau fur et à mesure de la lecture',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.5),
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildLyricsTab(BuildContext context, Song song) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        // Contrôles des paroles
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Paroles et phonétique',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+  Widget _buildHorizontalPdfViewer(dynamic resource) {
+    return FutureBuilder<String?>(
+      key: ValueKey('horizontal_pdf_${resource.url}'),
+      future: _downloadPdfIfNeeded(resource.url),
+      builder: (context, snapshot) {
+        if (!mounted) return const SizedBox();
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Toggle phonétique
+                CircularProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Chargement de la partition...',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                        fontFamily: 'Poppins',
+                      ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Erreur de chargement',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                        fontFamily: 'Poppins',
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Impossible de charger la partition PDF',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                        fontFamily: 'Poppins',
+                      ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // PDF Viewer horizontal avec Syncfusion
+        return SfPdfViewer.file(
+          File(snapshot.data!),
+          key: ValueKey('horizontal_pdf_viewer_${resource.url}'),
+          // Configuration pour scroll horizontal page par page
+          pageLayoutMode: PdfPageLayoutMode.single,
+          scrollDirection: PdfScrollDirection.horizontal,
+          enableDoubleTapZooming: true,
+          enableTextSelection:
+              false, // Désactiver pour éviter les conflits avec le scroll
+          canShowScrollHead: false, // Pas besoin du scroll head en horizontal
+          canShowScrollStatus: true, // Afficher le statut (page X/Y)
+          onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+            // Optionnel : callback quand le document est chargé
+            if (mounted) {
+              print('PDF chargé: ${details.document.pages.count} pages');
+            }
+          },
+          onPageChanged: (PdfPageChangedDetails details) {
+            // Optionnel : callback quand la page change
+            if (mounted) {
+              print('Page changée: ${details.newPageNumber}/');
+            }
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildNoPartitionAvailable(BuildContext context) {
+    return Container(
+      height: 300,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.picture_as_pdf_outlined,
+            size: 48,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Aucune partition disponible',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Les partitions PDF seront affichées ici\nquand elles seront disponibles',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPdfViewer(dynamic resource) {
+    // Utiliser un cache pour éviter les appels multiples
+    return FutureBuilder<String?>(
+      key: ValueKey('pdf_builder_${resource.url}'),
+      future: _downloadPdfIfNeeded(resource.url),
+      builder: (context, snapshot) {
+        // Vérifier si le widget est toujours monté
+        if (!mounted) return const SizedBox();
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Chargement de la partition...',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                      ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Erreur de chargement',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Impossible de charger la partition PDF',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                      ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    // Recharger seulement si le widget est monté
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Afficher le PDF avec gestion du cycle de vie
+        return _SafePdfViewer(
+          key: ValueKey('pdf_${resource.url}'),
+          filePath: snapshot.data!,
+          resourceUrl: resource.url,
+        );
+      },
+    );
+  }
+
+  // Cache pour éviter les appels multiples
+  static final Map<String, Future<String?>> _pdfCache = {};
+
+  Future<String?> _downloadPdfIfNeeded(String url) async {
+    // Utiliser le cache si disponible
+    if (_pdfCache.containsKey(url)) {
+      return _pdfCache[url];
+    }
+
+    // Créer le Future et le mettre en cache
+    final future = _resolvePdfPath(url);
+    _pdfCache[url] = future;
+
+    try {
+      final result = await future;
+      return result;
+    } catch (e) {
+      // Retirer du cache en cas d'erreur pour permettre un nouveau try
+      _pdfCache.remove(url);
+      return null;
+    }
+  }
+
+  Future<String?> _resolvePdfPath(String url) async {
+    print('🔍 PDF Path Resolution:');
+    print('   Original URL: $url');
+
+    // Si c'est un fichier file:// protocol, nettoyer le chemin
+    if (url.startsWith('file://')) {
+      final cleanPath = url.replaceFirst('file://', '');
+      print('   File protocol path: $cleanPath');
+      // Mais continuons la résolution car c'est peut-être relatif
+      url = cleanPath;
+    }
+
+    // Si le chemin commence par /data/, c'est probablement un chemin relatif du manifest
+    // qui doit être résolu par rapport au localPath de la song
+
+    // Récupérer le song actuel pour connaître le localPath
+    final songs = ref.read(songsProvider);
+    final songsList = songs.valueOrNull ?? [];
+    final song = songsList.firstWhere(
+      (s) => s.id == widget.songId,
+      orElse: () => throw Exception('Chant non trouvé'),
+    );
+
+    print('   Song localPath: ${song.localPath}');
+
+    if (song.localPath != null) {
+      // Nettoyer le chemin relatif (supprimer le préfixe de data)
+      String relativePath = url;
+      if (relativePath.startsWith('/data/')) {
+        final parts = relativePath.split('/');
+        print('   URL parts: $parts');
+        if (parts.length > 2) {
+          // Prendre tout après /data/[song-folder]/
+          relativePath = parts.skip(3).join('/');
+        }
+      }
+
+      print('   Relative path: $relativePath');
+
+      // Construire le chemin complet
+      final fullPath = '${song.localPath}/$relativePath';
+      print('   Full path to check: $fullPath');
+
+      // Vérifier si le fichier existe
+      final file = File(fullPath);
+      final exists = await file.exists();
+      print('   File exists: $exists');
+
+      if (exists) {
+        return fullPath;
+      }
+
+      // Si le fichier exact n'existe pas, chercher dans les dossiers communs
+      final commonDirs = ['partitions', 'scores', 'pdf', 'sheet_music'];
+
+      for (final dir in commonDirs) {
+        try {
+          final dirPath = Directory('${song.localPath}/$dir');
+          if (await dirPath.exists()) {
+            final pdfFiles = await dirPath
+                .list()
+                .where((entity) => entity.path.toLowerCase().endsWith('.pdf'))
+                .toList();
+
+            if (pdfFiles.isNotEmpty) {
+              final foundPath = pdfFiles.first.path;
+              print('   Found PDF in $dir: $foundPath');
+
+              // Vérifier que le fichier existe vraiment avant de le retourner
+              final foundFile = File(foundPath);
+              if (await foundFile.exists()) {
+                return foundPath;
+              }
+            }
+          }
+        } catch (e) {
+          print('   Error checking directory $dir: $e');
+        }
+      }
+
+      // Dernier recours : recherche récursive dans tout le répertoire du chant
+      try {
+        final songDir = Directory(song.localPath!);
+        final allPdfs = await songDir
+            .list(recursive: true)
+            .where((entity) => entity.path.toLowerCase().endsWith('.pdf'))
+            .toList();
+
+        if (allPdfs.isNotEmpty) {
+          final foundPath = allPdfs.first.path;
+          print('   Found PDFs via recursive search: $foundPath');
+
+          // Vérifier que le fichier existe vraiment
+          final foundFile = File(foundPath);
+          if (await foundFile.exists()) {
+            return foundPath;
+          }
+        }
+      } catch (e) {
+        print('   Error in recursive search: $e');
+      }
+    }
+
+    print('   ❌ PDF not found locally');
+    return null;
+  }
+
+  void _openPdfFullScreen(BuildContext context, dynamic resource) async {
+    // Résoudre le chemin du PDF avant d'ouvrir le viewer
+    final resolvedPath = await _downloadPdfIfNeeded(resource.url);
+
+    if (!mounted) return;
+
+    if (resolvedPath != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _FullScreenPdfViewer(
+            title: resource.label,
+            pdfPath: resolvedPath,
+          ),
+        ),
+      );
+    } else {
+      // Afficher une erreur si le PDF n'est pas trouvé
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Impossible de charger la partition ${resource.label}'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  Widget _buildLyricsTab(BuildContext context, Song song) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, _showMiniPlayer ? 110 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Mode d'affichage des paroles
+          Text(
+            'Affichage des paroles',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
+                ),
+          ),
+          const SizedBox(height: 20),
+          // Sélection du mode d'affichage
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
                 Expanded(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Phonétique',
-                        style: Theme.of(context).textTheme.bodySmall,
+                  child: GestureDetector(
+                    onTap: () => setState(() {
+                      showPhonetics = false;
+                      showTranslation = false;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 16, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: !showPhonetics && !showTranslation
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      Switch(
-                        value: showPhonetics,
-                        onChanged: (value) {
-                          setState(() {
-                            showPhonetics = value;
-                          });
-                        },
-                        activeColor: Theme.of(context).colorScheme.primary,
+                      child: Text(
+                        'Paroles',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: !showPhonetics && !showTranslation
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Poppins',
+                            ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
-
-                // Toggle traduction
                 Expanded(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
+                  child: GestureDetector(
+                    onTap: () => setState(() {
+                      showPhonetics = true;
+                      showTranslation = false;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 16, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: showPhonetics && !showTranslation
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        'Phonétique',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: showPhonetics && !showTranslation
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Poppins',
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() {
+                      showPhonetics = false;
+                      showTranslation = true;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 16, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: !showPhonetics && showTranslation
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
                         'Traduction',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: !showPhonetics && showTranslation
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Poppins',
+                            ),
                       ),
-                      Switch(
-                        value: showTranslation,
-                        onChanged: (value) {
-                          setState(() {
-                            showTranslation = value;
-                          });
-                        },
-                        activeColor: Theme.of(context).colorScheme.secondary,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Contenu des paroles
-        ..._buildLyricsContent(context, song),
-      ],
+          ),
+          const SizedBox(height: 20),
+          const SizedBox(height: 20),
+          ..._buildLyricsContent(context, song),
+        ],
+      ),
     );
   }
 
   List<Widget> _buildLyricsContent(BuildContext context, Song song) {
     final userVoicePart = ref.read(authProvider).user?.voicePart ?? 'soprano';
-    
+
     // Vérifier si les paroles sont disponibles
     if (song.lyrics.isEmpty) {
       return [
         Container(
-          padding: const EdgeInsets.all(20),
-          child: const Center(
+          padding: const EdgeInsets.all(40),
+          child: Center(
             child: Text(
               'Paroles non disponibles pour ce chant',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.6),
+                    fontFamily: 'Poppins',
+                  ),
             ),
           ),
         ),
       ];
     }
-    
+
     final lyrics = song.lyrics[userVoicePart] ?? song.lyrics.values.first;
     final phonetics = song.phonetics?[userVoicePart];
     final translation = song.translation?[userVoicePart];
 
-    // Simuler des lignes de paroles
+    // Parsing amélioré des lignes
     final lyricsLines = lyrics.split('...');
     final phoneticLines = phonetics?.split('...') ?? [];
     final translationLines = translation?.split('...') ?? [];
 
+    // Déterminer le contenu à afficher selon le mode
+    String getCurrentContent(int index) {
+      if (showPhonetics && phoneticLines.length > index) {
+        return phoneticLines[index].trim();
+      } else if (showTranslation && translationLines.length > index) {
+        return translationLines[index].trim();
+      } else {
+        return lyricsLines[index].trim();
+      }
+    }
+
+    Color getCurrentColor() {
+      if (showPhonetics) return Theme.of(context).colorScheme.primary;
+      if (showTranslation) return Theme.of(context).colorScheme.secondary;
+      return Theme.of(context).colorScheme.onSurface;
+    }
+
     return lyricsLines.asMap().entries.map((entry) {
       final index = entry.key;
-      final line = entry.value.trim();
+      final content = getCurrentContent(index);
 
       return Container(
-        margin: const EdgeInsets.only(bottom: 24),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 32), // Plus d'espacement
+        padding: const EdgeInsets.all(24), // Plus de padding
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16), // Plus arrondi
+          border: Border.all(
+            color: getCurrentColor().withOpacity(0.1),
+            width: 1,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Paroles originales
-            Text(
-              line.isEmpty ? '[Instrumental]' : line,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
-                  ),
-            ),
-
-            // Phonétique
-            if (showPhonetics &&
-                phoneticLines.length > index &&
-                phoneticLines[index].trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                phoneticLines[index].trim(),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontStyle: FontStyle.italic,
-                      height: 1.3,
-                    ),
+        child: Text(
+          content.isEmpty ? '[Pause instrumentale]' : content,
+          textAlign: TextAlign.center, // Centré pour meilleure lisibilité
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                // Police plus grande
+                color: getCurrentColor(),
+                fontWeight: showPhonetics ? FontWeight.w400 : FontWeight.w600,
+                fontStyle: showPhonetics ? FontStyle.italic : FontStyle.normal,
+                height: 1.8, // Espacement de ligne généreux
+                fontSize: 22, // Police explicitement plus grande
+                fontFamily: 'Poppins', // Police élégante
+                letterSpacing:
+                    showPhonetics ? 0.5 : 0.2, // Espacement des lettres
               ),
-            ],
-
-            // Traduction
-            if (showTranslation &&
-                translationLines.length > index &&
-                translationLines[index].trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color:
-                      Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  translationLines[index].trim(),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.secondary,
-                        height: 1.3,
-                      ),
-                ),
-              ),
-            ],
-          ],
         ),
       );
     }).toList();
   }
 
   Widget _buildMaestroNotesTab(BuildContext context, Song song) {
-    final userVoicePart = ref.read(authProvider).user?.voicePart ?? 'soprano';
-    final notes = song.maestroNotes[userVoicePart] ?? '';
+    // Récupérer toutes les notes du Maestro (simuler différents types de notes)
+    final allMaestroNotes = _getAllMaestroNotes(song);
 
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Notes du Maestro',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, _showMiniPlayer ? 110 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre principal
+          Text(
+            'Notes de direction',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Conseils et remarques du Maestro',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  fontFamily: 'Poppins',
+                ),
+          ),
+          const SizedBox(height: 32),
+
+          // Afficher toutes les notes
+          if (allMaestroNotes.isNotEmpty) ...[
+            ...allMaestroNotes
+                .map((note) => _buildNoteCard(context, note))
+                .toList(),
+          ] else ...[
+            // État vide élégant
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(40),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                  width: 1,
+                ),
               ),
-        ),
-        Text(
-          'Pour votre voix: ${userVoicePart.capitalize()}',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.note_alt_outlined,
+                    size: 48,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.4),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Aucune note disponible',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Poppins',
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.7),
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Le maestro n\'a pas encore ajouté de notes\npour ce chant',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.5),
+                          fontFamily: 'Poppins',
+                          height: 1.5,
+                        ),
+                  ),
+                ],
               ),
-        ),
-        const SizedBox(height: 20),
-        if (notes.isNotEmpty) ...[
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResourcesTab(BuildContext context, Song song) {
+    final audioState = ref.watch(audioPlayerProvider);
+    final currentPlayingSong = audioState.currentSongId == song.id;
+    final currentVoice = audioState.currentVoicePart;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, _showMiniPlayer ? 110 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre principal
+          Text(
+            'Ressources du chant',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
+                ),
+          ),
+          const SizedBox(height: 32),
+
+          // Informations générales - tout dans une seule carte élégante
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                width: 1,
               ),
             ),
             child: Column(
@@ -1119,173 +1904,132 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
                 Row(
                   children: [
                     Icon(
-                      Icons.note_alt,
+                      Icons.info_outline,
                       color: Theme.of(context).colorScheme.primary,
                       size: 20,
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Conseils personnalisés',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      'Informations générales',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
+                            fontFamily: 'Poppins',
                             color: Theme.of(context).colorScheme.primary,
                           ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  notes,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        height: 1.5,
-                      ),
-                ),
+                const SizedBox(height: 20),
+                _buildInfoRow(context, Icons.music_note, 'Tonalité', song.key),
+                const SizedBox(height: 16),
+                _buildInfoRow(context, Icons.schedule, 'Durée',
+                    _formatDuration(song.duration)),
+                const SizedBox(height: 16),
+                _buildInfoRow(
+                    context, Icons.person, 'Compositeur', song.composer),
+                const SizedBox(height: 16),
+                _buildInfoRow(context, Icons.calendar_today, 'Date d\'ajout',
+                    _formatDate(song.createdAt)),
               ],
             ),
           ),
-        ] else ...[
+
+          const SizedBox(height: 32),
+
+          // Fichiers audio - liste moderne et épurée
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.audiotrack,
+                      color: Theme.of(context).colorScheme.secondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Fichiers audio disponibles',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Poppins',
+                            color: Theme.of(context).colorScheme.secondary,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                ...song.audioUrls.entries
+                    .map((entry) => _buildAudioFileItem(context, entry.key,
+                        currentPlayingSong && currentVoice == entry.key))
+                    .toList(),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          // Ressources supplémentaires - design plus épuré
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
             child: Column(
               children: [
                 Icon(
-                  Icons.note_alt_outlined,
-                  size: 48,
+                  Icons.folder_outlined,
+                  size: 40,
                   color:
                       Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Aucune note disponible',
+                  'Ressources supplémentaires',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Poppins',
                         color: Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.6),
+                            .withOpacity(0.7),
                       ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Le maestro n\'a pas encore ajouté\nde notes pour cette voix',
+                  'Aucune ressource supplémentaire disponible pour l\'instant',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context)
                             .colorScheme
                             .onSurface
                             .withOpacity(0.5),
+                        fontFamily: 'Poppins',
+                        height: 1.5,
                       ),
                 ),
               ],
             ),
           ),
         ],
-      ],
-    );
-  }
-
-  Widget _buildResourcesTab(BuildContext context, Song song) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Ressources',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-        ),
-        const SizedBox(height: 20),
-
-        // Informations générales
-        _buildResourceSection(
-          context,
-          'Informations générales',
-          Icons.info_outline,
-          Theme.of(context).colorScheme.primary,
-          [
-            _buildResourceItem('Tonalité', song.key),
-            _buildResourceItem('Durée', _formatDuration(song.duration)),
-            _buildResourceItem('Compositeur', song.composer),
-            _buildResourceItem('Date d\'ajout', _formatDate(song.createdAt)),
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // Fichiers audio disponibles
-        _buildResourceSection(
-          context,
-          'Fichiers audio',
-          Icons.audiotrack,
-          Theme.of(context).colorScheme.secondary,
-          song.audioUrls.entries.map((entry) {
-            return _buildResourceItem(
-              '${entry.key.capitalize()} (MP3)',
-              'Disponible',
-              trailing: Icon(
-                Icons.check_circle,
-                color: Colors.green,
-                size: 16,
-              ),
-            );
-          }).toList(),
-        ),
-
-        const SizedBox(height: 24),
-
-        // Placeholder pour ressources supplémentaires
-        _buildResourceSection(
-          context,
-          'Ressources supplémentaires',
-          Icons.folder_outlined,
-          Theme.of(context).colorScheme.tertiary,
-          [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                  width: 2,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.cloud_upload_outlined,
-                    size: 32,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.4),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Aucune ressource supplémentaire',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.6),
-                        ),
-                  ),
-                  Text(
-                    'Le maestro peut ajouter des PDF, enregistrements, etc.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.5),
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 
@@ -1319,6 +2063,229 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
         const SizedBox(height: 12),
         ...children,
       ],
+    );
+  }
+
+  // Récupérer toutes les notes du Maestro depuis le modèle Song
+  List<MaestroNote> _getAllMaestroNotes(Song song) {
+    final notes = <MaestroNote>[];
+
+    // Récupérer les notes depuis la structure hiérarchique du Song
+    // Les notes sont dans song.maestroNotes (Map<String, String>)
+    // qui extrait les notes de la première voix de chaque pupitre
+
+    if (song.maestroNotes.isNotEmpty) {
+      int index = 0;
+      final categories = [
+        'Général',
+        'Technique',
+        'Expression',
+        'Interprétation'
+      ];
+      final icons = [
+        Icons.note_alt,
+        Icons.air,
+        Icons.trending_up,
+        Icons.psychology
+      ];
+      final colors = [Colors.blue, Colors.green, Colors.orange, Colors.purple];
+
+      // Parcourir toutes les notes disponibles
+      song.maestroNotes.forEach((voicePart, content) {
+        if (content.isNotEmpty) {
+          notes.add(MaestroNote(
+            category: voicePart, // Utiliser directement le nom de la voix
+            title: voicePart.capitalize(),
+            content: content,
+            icon: icons[index % icons.length],
+            color: colors[index % colors.length],
+          ));
+          index++;
+        }
+      });
+    }
+
+    return notes;
+  }
+
+  // Helper pour générer un titre approprié selon le pupitre
+  String _getNoteTitleForVoicePart(String voicePart) {
+    switch (voicePart.toLowerCase()) {
+      case 'soprano':
+        return 'Conseils pour les Sopranos';
+      case 'alto':
+        return 'Conseils pour les Altos';
+      case 'tenor':
+        return 'Conseils pour les Ténors';
+      case 'bass':
+        return 'Conseils pour les Basses';
+      case 'general':
+      case 'generale':
+        return 'Conseils généraux';
+      default:
+        return 'Conseils pour ${voicePart.capitalize()}';
+    }
+  }
+
+  // Widget simple pour afficher une note sans carte
+  Widget _buildNoteCard(BuildContext context, MaestroNote note) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nom de la voix
+          Text(
+            note.title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+          ),
+          const SizedBox(height: 8),
+          // Contenu de la note
+          Text(
+            note.content,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  height: 1.6,
+                  fontFamily: 'Poppins',
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Widget pour une ligne d'information avec icône
+  Widget _buildInfoRow(
+      BuildContext context, IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(
+          icon,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  fontFamily: 'Poppins',
+                ),
+          ),
+        ),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Poppins',
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+      ],
+    );
+  }
+
+  // Widget pour un fichier audio avec indicateur de lecture
+  Widget _buildAudioFileItem(
+      BuildContext context, String voicePart, bool isCurrentlyPlaying) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isCurrentlyPlaying
+            ? Theme.of(context).colorScheme.secondary.withOpacity(0.1)
+            : Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isCurrentlyPlaying
+              ? Theme.of(context).colorScheme.secondary.withOpacity(0.3)
+              : Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Icône de voix ou de lecture
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isCurrentlyPlaying
+                  ? Theme.of(context).colorScheme.secondary
+                  : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isCurrentlyPlaying ? Icons.volume_up : Icons.music_note,
+              size: 16,
+              color: isCurrentlyPlaying
+                  ? Theme.of(context).colorScheme.onSecondary
+                  : Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 16),
+
+          // Nom de la voix
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  voicePart.capitalize(),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: isCurrentlyPlaying
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        fontFamily: 'Poppins',
+                        color: isCurrentlyPlaying
+                            ? Theme.of(context).colorScheme.secondary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Fichier MP3 • Disponible',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                        fontFamily: 'Poppins',
+                      ),
+                ),
+              ],
+            ),
+          ),
+
+          // Indicateur de statut
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isCurrentlyPlaying
+                  ? Theme.of(context).colorScheme.secondary.withOpacity(0.2)
+                  : Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              isCurrentlyPlaying ? 'En lecture' : 'Disponible',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isCurrentlyPlaying
+                        ? Theme.of(context).colorScheme.secondary
+                        : Colors.green.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Poppins',
+                  ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1374,9 +2341,6 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
   }
 
   Widget _buildHierarchicalVoiceSelector(BuildContext context, Song song) {
-    // Utiliser la nouvelle structure hiérarchique ou fallback vers l'ancienne
-    final availableVoices = song.allAvailableVoices.keys.toList();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1586,292 +2550,6 @@ class _LearningCenterSheetState extends ConsumerState<LearningCenterSheet>
 
     ref.read(audioPlayerProvider.notifier).setTempo(nextSpeed);
   }
-
-  /// Affichage hiérarchique des voix (nouvelle structure)
-  Widget _buildHierarchicalVoiceChips(BuildContext context, Song song) {
-    if (song.voiceParts == null) return Container();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: song.voiceParts!.entries.map((partEntry) {
-        final partId = partEntry.key;
-        final voicePart = partEntry.value;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Titre du pupitre
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                voicePart.key,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-              ),
-            ),
-            // Voix du pupitre
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: voicePart.voices.entries.map((voiceEntry) {
-                final voiceId = voiceEntry.key;
-                final voice = voiceEntry.value;
-                final isSelected = selectedVoices.contains(voiceId);
-
-                return GestureDetector(
-                  onTap: () async {
-                    setState(() {
-                      if (isSelected) {
-                        selectedVoices.remove(voiceId);
-                      } else {
-                        selectedVoices.add(voiceId);
-                      }
-                      if (selectedVoices.isEmpty) {
-                        selectedVoices.add(voiceId);
-                      }
-                      if (selectedVoices.length == 1) {
-                        primaryVoice = selectedVoices.first;
-                      }
-                    });
-
-                    if (selectedVoices.length == 1) {
-                      await ref
-                          .read(audioPlayerProvider.notifier)
-                          .playSong(song, selectedVoices.first);
-                    }
-                  },
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context)
-                                .colorScheme
-                                .outline
-                                .withOpacity(0.3),
-                      ),
-                    ),
-                    child: Text(
-                      voice.label,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-          ],
-        );
-      }).toList(),
-    );
-  }
-
-  /// Affichage simple des voix (ancienne structure)
-  Widget _buildSimpleVoiceChips(
-      BuildContext context, Song song, List<String> availableVoices) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: availableVoices.map((voiceKey) {
-        final voiceLabels = {
-          'soprano': 'Soprano',
-          'alto': 'Alto',
-          'tenor': 'Ténor',
-          'bass': 'Basse',
-        };
-        final voice = voiceLabels[voiceKey.toLowerCase()] ??
-            voiceKey[0].toUpperCase() + voiceKey.substring(1);
-        final isSelected = selectedVoices.contains(voiceKey.toLowerCase());
-
-        return GestureDetector(
-          onTap: () async {
-            setState(() {
-              if (isSelected) {
-                selectedVoices.remove(voiceKey.toLowerCase());
-              } else {
-                selectedVoices.add(voiceKey.toLowerCase());
-              }
-              if (selectedVoices.isEmpty) {
-                selectedVoices.add(voiceKey.toLowerCase());
-              }
-              if (selectedVoices.length == 1) {
-                primaryVoice = selectedVoices.first;
-              }
-            });
-
-            if (selectedVoices.length == 1) {
-              final newVoicePart = selectedVoices.first;
-              await ref
-                  .read(audioPlayerProvider.notifier)
-                  .playSong(song, newVoicePart);
-            }
-          },
-          child: Container(
-            width: 70,
-            height: 35,
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.onSurface
-                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Center(
-              child: Text(
-                voice,
-                style: TextStyle(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.surface
-                      : Theme.of(context).colorScheme.onSurface,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  List<double> _generateFallbackWaveform() {
-    // Fallback simple si pas de données de waveform disponibles
-    return List.generate(50, (index) => 0.3 + 0.4 * ((index * 7) % 10 / 10));
-  }
-
-  /// Barre de progression fallback si pas de waveform
-  Widget _buildFallbackProgressBar(BuildContext context, double progress) {
-    return Container(
-      width: double.infinity,
-      height: 3,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(1.5),
-      ),
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: progress,
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            borderRadius: BorderRadius.circular(1.5),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// CustomPainter pour la visualisation en forme d'onde style spectrogramme
-class SpectrogramWaveformPainter extends CustomPainter {
-  final List<double> samples;
-  final double progress;
-  final Color activeColor;
-  final Color inactiveColor;
-  final double scrollOffset;
-  final double viewportWidth;
-
-  SpectrogramWaveformPainter({
-    required this.samples,
-    required this.progress,
-    required this.activeColor,
-    required this.inactiveColor,
-    this.scrollOffset = 0.0,
-    this.viewportWidth = 300.0,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (samples.isEmpty) return;
-
-    final paint = Paint()
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.butt;
-
-    // Calculer la position du curseur de lecture qui suit le scroll
-    final totalWidth = size.width;
-    final barWidth = totalWidth / samples.length;
-
-    // Position absolue du curseur de lecture dans le spectrogramme complet
-    final absoluteProgressPosition = totalWidth * progress;
-
-    // Position relative du curseur par rapport au viewport visible
-    final relativeProgressPosition = absoluteProgressPosition - scrollOffset;
-
-    for (int i = 0; i < samples.length; i++) {
-      final x = i * barWidth;
-
-      // Une barre est active si elle est avant la position de lecture
-      final isActive = x <= absoluteProgressPosition;
-
-      // Effet de highlight pour la barre actuellement en cours de lecture
-      final isCurrentlyPlaying =
-          (x - barWidth / 2) <= relativeProgressPosition &&
-              relativeProgressPosition <= (x + barWidth / 2) &&
-              relativeProgressPosition >= 0 &&
-              relativeProgressPosition <= viewportWidth;
-
-      // Normaliser la hauteur entre 0.1 et 1.0 pour éviter les barres trop petites
-      final normalizedHeight = (samples[i] * 0.9 + 0.1).clamp(0.1, 1.0);
-      final barHeight = size.height * normalizedHeight;
-
-      // Choisir la couleur appropriée
-      if (isCurrentlyPlaying) {
-        // Couleur de highlight pour la barre en cours de lecture
-        paint.color = activeColor.withOpacity(1.0);
-      } else if (isActive) {
-        // Couleur active pour les barres déjà lues
-        paint.color = activeColor.withOpacity(0.7);
-      } else {
-        // Couleur inactive pour les barres pas encore lues
-        paint.color = inactiveColor;
-      }
-
-      // Dessiner des barres verticales fines comme un spectrogramme
-      canvas.drawLine(
-        Offset(x + barWidth / 2, (size.height - barHeight) / 2),
-        Offset(x + barWidth / 2, (size.height + barHeight) / 2),
-        paint,
-      );
-    }
-
-    // Dessiner un curseur de lecture vertical fin
-    if (relativeProgressPosition >= 0 &&
-        relativeProgressPosition <= viewportWidth) {
-      final cursorPaint = Paint()
-        ..color = activeColor
-        ..strokeWidth = 2.0;
-
-      canvas.drawLine(
-        Offset(relativeProgressPosition, 0),
-        Offset(relativeProgressPosition, size.height),
-        cursorPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(SpectrogramWaveformPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.samples != samples ||
-        oldDelegate.scrollOffset != scrollOffset ||
-        oldDelegate.viewportWidth != viewportWidth;
-  }
 }
 
 // Widget d'animation equalizer classique
@@ -1892,7 +2570,8 @@ class AudioEqualizerAnimation extends StatefulWidget {
   });
 
   @override
-  State<AudioEqualizerAnimation> createState() => _AudioEqualizerAnimationState();
+  State<AudioEqualizerAnimation> createState() =>
+      _AudioEqualizerAnimationState();
 }
 
 class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
@@ -1904,7 +2583,7 @@ class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
   @override
   void initState() {
     super.initState();
-    
+
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 150),
       vsync: this,
@@ -1912,8 +2591,8 @@ class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
 
     // Initialiser les hauteurs des barres
     _barHeights = List.generate(
-      widget.barsCount, 
-      (index) => 0.2 + Random().nextDouble() * 0.8,
+      widget.barsCount,
+      (index) => (0.2 + Random().nextDouble() * 0.8).clamp(0.1, 1.0),
     );
 
     _startAnimation();
@@ -1926,7 +2605,7 @@ class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
           // Générer de nouvelles hauteurs aléaoires pour chaque barre
           _barHeights = List.generate(
             widget.barsCount,
-            (index) => 0.1 + Random().nextDouble() * 0.9,
+            (index) => (0.1 + Random().nextDouble() * 0.9).clamp(0.1, 1.0),
           );
         });
       }
@@ -1936,7 +2615,7 @@ class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
   @override
   void didUpdateWidget(AudioEqualizerAnimation oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     if (widget.isPlaying != oldWidget.isPlaying) {
       if (!widget.isPlaying) {
         // Arrêter l'animation et réduire les barres
@@ -1968,15 +2647,195 @@ class _AudioEqualizerAnimationState extends State<AudioEqualizerAnimation>
             width: 3,
             height: _barHeights[index] * widget.height,
             decoration: BoxDecoration(
-              color: widget.isPlaying 
-                  ? widget.activeColor
-                  : widget.inactiveColor,
+              color:
+                  widget.isPlaying ? widget.activeColor : widget.inactiveColor,
               borderRadius: BorderRadius.circular(1.5),
             ),
           );
         }),
       ),
     );
+  }
+}
+
+// Widget PDF sécurisé avec gestion du cycle de vie
+class _SafePdfViewer extends StatefulWidget {
+  final String filePath;
+  final String resourceUrl;
+
+  const _SafePdfViewer({
+    super.key,
+    required this.filePath,
+    required this.resourceUrl,
+  });
+
+  @override
+  State<_SafePdfViewer> createState() => _SafePdfViewerState();
+}
+
+class _SafePdfViewerState extends State<_SafePdfViewer> {
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: () {
+          if (!_isDisposed && mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => _FullScreenPdfViewer(
+                  title: 'Partition',
+                  pdfPath: widget.filePath,
+                ),
+              ),
+            );
+          }
+        },
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SfPdfViewer.file(
+              File(widget.filePath),
+              enableDoubleTapZooming: true,
+              enableTextSelection: true,
+              canShowScrollHead: true,
+              canShowScrollStatus: true,
+              canShowPaginationDialog: true,
+              onPageChanged: (PdfPageChangedDetails details) {
+                // Vérifier si le widget est encore monté avant setState
+                if (!_isDisposed && mounted) {
+                  // Aucun setState nécessaire ici pour éviter les erreurs
+                }
+              },
+              onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+                if (!_isDisposed && mounted) {
+                  // Aucun setState nécessaire ici pour éviter les erreurs
+                }
+              },
+              onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
+                if (!_isDisposed && mounted) {
+                  print('Erreur de chargement PDF: ${details.error}');
+                }
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Widget pour la vue plein écran du PDF
+class _FullScreenPdfViewer extends StatefulWidget {
+  final String title;
+  final String pdfPath;
+
+  const _FullScreenPdfViewer({
+    required this.title,
+    required this.pdfPath,
+  });
+
+  @override
+  State<_FullScreenPdfViewer> createState() => _FullScreenPdfViewerState();
+}
+
+class _FullScreenPdfViewerState extends State<_FullScreenPdfViewer> {
+  int currentPage = 0;
+  int totalPages = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black.withOpacity(0.7),
+        foregroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            if (totalPages > 0)
+              Text(
+                'Page ${currentPage + 1} sur $totalPages',
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {
+              // TODO: Partager le PDF
+            },
+            icon: const Icon(Icons.share),
+          ),
+        ],
+      ),
+      body: SfPdfViewer.file(
+        File(widget.pdfPath),
+        enableDoubleTapZooming: true,
+        enableTextSelection: true,
+        canShowScrollHead: true,
+        canShowScrollStatus: true,
+        onPageChanged: (PdfPageChangedDetails details) {
+          setState(() {
+            currentPage = details.newPageNumber - 1;
+          });
+        },
+        onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+          setState(() {
+            totalPages = details.document.pages.count;
+          });
+        },
+        onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
+          print('Erreur PDF plein écran: ${details.description}');
+        },
+      ),
+    );
+  }
+}
+
+// Delegate pour SliverPersistentHeader qui maintient le TabBar fixé
+class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+
+  _SliverTabBarDelegate({required this.child});
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
+    return false;
   }
 }
 
