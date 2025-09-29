@@ -13,7 +13,7 @@ import 'i18n/strings.g.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   LocaleSettings.useDeviceLocale();
-  
+
   runApp(
     ProviderScope(
       child: TranslationProvider(
@@ -31,10 +31,10 @@ class ShirChoirApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
     final themeNotifier = ref.read(themeProvider.notifier);
-    
+
     return ToastificationWrapper(
       child: MaterialApp.router(
-        title: 'Shir Choir',
+        title: 'Shir Book',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,

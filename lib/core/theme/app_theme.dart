@@ -18,28 +18,28 @@ class AppTheme {
         surface: surfaceColor,
         brightness: Brightness.light,
       ),
-      textTheme: GoogleFonts.interTextTheme().copyWith(
-        headlineLarge: GoogleFonts.inter(
+      textTheme: GoogleFonts.manropeTextTheme().copyWith(
+        headlineLarge: GoogleFonts.manrope(
           fontSize: 32,
           fontWeight: FontWeight.w700,
           color: primaryBlue,
         ),
-        headlineMedium: GoogleFonts.inter(
+        headlineMedium: GoogleFonts.manrope(
           fontSize: 24,
           fontWeight: FontWeight.w600,
           color: primaryBlue,
         ),
-        titleLarge: GoogleFonts.inter(
+        titleLarge: GoogleFonts.manrope(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: primaryBlue,
         ),
-        bodyLarge: GoogleFonts.inter(
+        bodyLarge: GoogleFonts.manrope(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: const Color(0xFF374151),
         ),
-        bodyMedium: GoogleFonts.inter(
+        bodyMedium: GoogleFonts.manrope(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: const Color(0xFF6B7280),
@@ -106,12 +106,12 @@ class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.manrope(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: primaryBlue,
         ),
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.manrope(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: const Color(0xFF374151),
@@ -122,7 +122,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: const Color(0xFF374151),
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.manrope(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: Colors.white,
@@ -154,28 +154,28 @@ class AppTheme {
         onSurface: darkTextPrimary,
         brightness: Brightness.dark,
       ),
-      textTheme: GoogleFonts.interTextTheme().copyWith(
-        headlineLarge: GoogleFonts.inter(
+      textTheme: GoogleFonts.manropeTextTheme().copyWith(
+        headlineLarge: GoogleFonts.manrope(
           fontSize: 32,
           fontWeight: FontWeight.w700,
           color: darkPrimaryBlue,
         ),
-        headlineMedium: GoogleFonts.inter(
+        headlineMedium: GoogleFonts.manrope(
           fontSize: 24,
           fontWeight: FontWeight.w600,
           color: darkPrimaryBlue,
         ),
-        titleLarge: GoogleFonts.inter(
+        titleLarge: GoogleFonts.manrope(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: darkTextPrimary,
         ),
-        bodyLarge: GoogleFonts.inter(
+        bodyLarge: GoogleFonts.manrope(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: darkTextPrimary,
         ),
-        bodyMedium: GoogleFonts.inter(
+        bodyMedium: GoogleFonts.manrope(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: darkTextSecondary,
@@ -267,12 +267,12 @@ class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: darkCardColor,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.manrope(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: darkTextPrimary,
         ),
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.manrope(
           fontSize: 16,
           fontWeight: FontWeight.w400,
           color: darkTextPrimary,
@@ -283,7 +283,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: darkCardColor,
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.manrope(
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: darkTextPrimary,
@@ -303,8 +303,8 @@ class AppTheme {
         backgroundColor: darkCardColor,
         selectedIconTheme: const IconThemeData(color: darkPrimaryBlue),
         unselectedIconTheme: const IconThemeData(color: darkTextSecondary),
-        selectedLabelTextStyle: GoogleFonts.inter(color: darkPrimaryBlue),
-        unselectedLabelTextStyle: GoogleFonts.inter(color: darkTextSecondary),
+        selectedLabelTextStyle: GoogleFonts.manrope(color: darkPrimaryBlue),
+        unselectedLabelTextStyle: GoogleFonts.manrope(color: darkTextSecondary),
       ),
     );
   }

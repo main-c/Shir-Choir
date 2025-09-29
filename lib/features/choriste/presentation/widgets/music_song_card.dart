@@ -129,16 +129,7 @@ class MusicSongCard extends ConsumerWidget {
                                   width: 0.5,
                                 ),
                               ),
-                              child: Text(
-                                song.sizeMb != null && song.sizeMb! > 0
-                                    ? '${song.sizeMb!.toStringAsFixed(1)} MB'
-                                    : '--',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
+                              child: _buildSmartIndicatorText(context, song),
                             ),
                             const SizedBox(width: 8),
                             if (song.lyrics.isNotEmpty) ...[
@@ -152,8 +143,7 @@ class MusicSongCard extends ConsumerWidget {
                               ),
                               const SizedBox(width: 4),
                             ],
-                            if ( song.allAvailableVoices.isNotEmpty
-                                ) ...[
+                            if (song.allAvailableVoices.isNotEmpty) ...[
                               Icon(
                                 Icons.headphones,
                                 size: 16,
@@ -639,4 +629,92 @@ class MusicSongCard extends ConsumerWidget {
       },
     );
   }
+
+  /// Affiche l'indicateur intelligent selon le statut du song
+  Widget _buildSmartIndicatorText(BuildContext context, Song song) {
+    switch (song.availability) {
+      case SongAvailability.downloadedAndReady:
+        // Pour les songs téléchargés : afficher des infos plus utiles
+        final voiceCount = song.allAvailableVoices.length;
+        if (voiceCount > 0) {
+          return Text(
+            '$voiceCount voix',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Colors.green,
+            ),
+          );
+        } else {
+          // Fallback : afficher la durée
+          return Text(
+            _formatDuration(song.duration),
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Colors.green,
+            ),
+          );
+        }
+
+      case SongAvailability.availableForDownload:
+      case SongAvailability.updateAvailable:
+        // Pour les songs non téléchargés : afficher la taille
+        if (song.sizeMb != null && song.sizeMb! > 0) {
+          return Text(
+            '${song.sizeMb!.toStringAsFixed(1)} MB',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        }
+        return Text(
+          '--',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        );
+
+      case SongAvailability.downloading:
+        return Text(
+          'Téléchargement...',
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        );
+
+      case SongAvailability.syncError:
+        return const Text(
+          'Erreur',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.red,
+          ),
+        );
+
+      default:
+        return Text(
+          '--',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+          ),
+        );
+    }
+  }
+
+  /// Formate une durée en format mm:ss
+  // String _formatDuration(Duration duration) {
+  //   final minutes = duration.inMinutes;
+  //   final seconds = duration.inSeconds % 60;
+  //   return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+  // }
 }

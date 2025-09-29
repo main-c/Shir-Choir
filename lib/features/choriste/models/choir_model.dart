@@ -32,14 +32,17 @@ class Choir {
   factory Choir.demo() {
     return Choir(
       id: 'shir-choir-001',
-      name: 'Shir Choir',
-      description: 'Un choeur passionné dédié à l\'excellence musicale et à la beauté des harmonies vocales.',
+      name: 'Shir Book',
+      description:
+          'Un choeur passionné dédié à l\'excellence musicale et à la beauté des harmonies vocales.',
       location: 'Paris, France',
       website: 'https://shir-choir.fr',
       phone: '+33 1 42 00 00 00',
       email: 'contact@shir-choir.fr',
-      coverImageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-      logoUrl: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80',
+      coverImageUrl:
+          'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+      logoUrl:
+          'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80',
       foundedDate: DateTime(2018, 9, 1),
       conductor: 'Maestro Martin Dupont',
       genres: ['Classique', 'Gospel', 'Contemporain', 'Traditionnel'],

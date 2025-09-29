@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -38,15 +39,56 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'choriste-dashboard',
         builder: (context, state) => const ChoristeDashboardPage(),
       ),
+      // Routes désactivées pour la release
       GoRoute(
         path: '/maestro',
         name: 'maestro-dashboard',
-        builder: (context, state) => const MaestroDashboardPage(),
+        builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('En développement')),
+          body: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.construction, size: 64, color: Colors.orange),
+                SizedBox(height: 16),
+                Text(
+                  'Mode Maestro',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Cette fonctionnalité est en cours de développement\net sera disponible dans une prochaine version.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
       GoRoute(
         path: '/choir/profile',
         name: 'choir-profile',
-        builder: (context, state) => const ChoirProfilePage(),
+        builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('En développement')),
+          body: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.construction, size: 64, color: Colors.orange),
+                SizedBox(height: 16),
+                Text(
+                  'Profil de la Chorale',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Cette fonctionnalité est en cours de développement\net sera disponible dans une prochaine version.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
       GoRoute(
         path: '/settings',
