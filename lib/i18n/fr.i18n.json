@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "Shir Choir",
-    "subtitle": "Interface de gestion de chorale"
+    "title": "Shir Book",
+    "subtitle": "Apprenez, gérez et maîtrisez votre répertoire choral en un seul endroit"
   },
   "auth": {
     "login": "Se connecter",
