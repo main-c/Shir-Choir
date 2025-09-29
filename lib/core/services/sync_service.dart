@@ -5,6 +5,7 @@ import 'storage_service.dart';
 import 'storage_service_factory.dart';
 import 'local_storage_service.dart';
 import 'download_service.dart';
+import 'debug_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -18,29 +19,40 @@ class SyncService {
 
   /// Charge tous les chants (locaux + distants si connecté)
   Future<List<Song>> loadAllSongs() async {
+    DebugService.log('🔄 SyncService.loadAllSongs() - Début');
     await _localService.initialize();
     
     // 1. Charger d'abord les chants locaux (offline-first)
     final localSongs = await _localService.getStoredSongs();
     final localSongsMap = {for (var song in localSongs) song.id: song};
+    DebugService.log('📱 Chants locaux trouvés: ${localSongs.length}');
     
     // 2. Si connecté, récupérer le manifeste pour voir tout ce qui existe
-    if (await _connectivityService.hasInternetConnection()) {
+    final hasConnection = await _connectivityService.hasInternetConnection();
+    DebugService.log('🌐 Connexion Internet: $hasConnection');
+    
+    if (hasConnection) {
       try {
+        DebugService.log('📥 Téléchargement du manifeste...');
         final manifest = await _storageService.downloadManifest();
+        DebugService.logSuccess('Manifeste téléchargé avec succès');
+        
         final remoteSongs = _parseManifestSongs(manifest);
+        DebugService.log('🎵 Chants distants trouvés: ${remoteSongs.length}');
         
         // 3. Fusionner : chants locaux + chants disponibles en ligne
         final allSongs = _mergeLocalAndRemoteSongs(localSongsMap, remoteSongs);
+        DebugService.log('🔄 Total après fusion: ${allSongs.length}');
         return allSongs;
         
       } catch (e) {
-        // En cas d'erreur réseau, retourner seulement les chants locaux
-        print('Erreur lors de la synchronisation: $e');
-        return localSongs;
+        // TOUJOURS faire remonter l'erreur pour que l'UI puisse l'afficher à l'utilisateur
+        // L'UI décidera quoi faire (afficher l'erreur, fallback sur chants locaux, etc.)
+        rethrow;
       }
     } else {
       // Mode offline : seulement les chants locaux
+      DebugService.logWarning('Mode offline - Retour des chants locaux uniquement');
       return localSongs;
     }
   }

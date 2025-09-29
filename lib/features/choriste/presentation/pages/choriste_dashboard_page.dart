@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../i18n/strings.g.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../auth/models/user_model.dart';
@@ -55,58 +54,86 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Column(
         children: [
-          _buildHeader(context, t, user, songsList.length),
+          _buildHeader(context, t, user, songs.valueOrNull?.length ?? 0),
           _buildModernSearchBar(context, t),
           // _buildFilterChips(context, t),
           Expanded(
-            child: filteredSongs.isEmpty
-                ? _buildEmptyState(context, t)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 80),
-                    itemCount: filteredSongs.length,
-                    itemBuilder: (context, index) {
-                      final song = filteredSongs[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: MusicSongCard(
-                          song: song,
-                          onTap: () {
-                            // Ouvrir les détails seulement si le chant est téléchargé
-                            if (song.availability ==
-                                SongAvailability.downloadedAndReady) {
-                              // Ouvrir le learning center au lieu de song detail
-                              showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                backgroundColor: Colors.transparent,
-                                builder: (context) =>
-                                    LearningCenterSheet(songId: song.id),
-                              );
-                            } else {
-                              // Montrer un snackbar informatif pour les chants non disponibles
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(_getAvailabilityMessage(
-                                      song.availability)),
-                                  action: song.availability ==
-                                          SongAvailability.availableForDownload
-                                      ? SnackBarAction(
-                                          label: 'Télécharger',
-                                          onPressed: () {
-                                            ref
-                                                .read(songsProvider.notifier)
-                                                .downloadSong(song.id);
-                                          },
-                                        )
-                                      : null,
-                                ),
-                              );
-                            }
+            child: songs.when(
+              loading: () => _buildLoadingState(context),
+              error: (error, stackTrace) => _buildErrorState(context, t, error),
+              data: (songsList) {
+                final filteredSongs = songsList.where((song) {
+                  final matchesSearch =
+                      song.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                          song.composer.toLowerCase().contains(_searchQuery.toLowerCase());
+
+                  if (!matchesSearch) return false;
+
+                  // Filtrage par statut retiré temporairement pour le MVP
+
+                  return true;
+                }).toList();
+
+                return filteredSongs.isEmpty
+                    ? RefreshIndicator(
+                        onRefresh: () async {
+                          await ref.read(songsProvider.notifier).forceSync();
+                        },
+                        child: _buildEmptyState(context, t),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          await ref.read(songsProvider.notifier).forceSync();
+                        },
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 80),
+                          itemCount: filteredSongs.length,
+                          itemBuilder: (context, index) {
+                            final song = filteredSongs[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: MusicSongCard(
+                                song: song,
+                                onTap: () {
+                                  // Ouvrir les détails seulement si le chant est téléchargé
+                                  if (song.availability ==
+                                      SongAvailability.downloadedAndReady) {
+                                    // Ouvrir le learning center au lieu de song detail
+                                    showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      backgroundColor: Colors.transparent,
+                                      builder: (context) =>
+                                          LearningCenterSheet(songId: song.id),
+                                    );
+                                  } else {
+                                    // Montrer un snackbar informatif pour les chants non disponibles
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(_getAvailabilityMessage(
+                                            song.availability)),
+                                        action: song.availability ==
+                                                SongAvailability.availableForDownload
+                                            ? SnackBarAction(
+                                                label: 'Télécharger',
+                                                onPressed: () {
+                                                  ref
+                                                      .read(songsProvider.notifier)
+                                                      .downloadSong(song.id);
+                                                },
+                                              )
+                                            : null,
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            );
                           },
                         ),
                       );
-                    },
-                  ),
+              },
+            ),
           ),
         ],
       ),
@@ -158,7 +185,14 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                 // Clickable choir logo
                 GestureDetector(
                   onTap: () {
-                    context.push('/choir/profile');
+                    // Profil de chorale en développement
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                            'Fonctionnalité en développement - Profil de la chorale disponible prochainement'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
                   },
                   child: Container(
                     width: 80,
@@ -201,13 +235,20 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      context.push('/choir/profile');
+                      // Profil de chorale en développement
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Fonctionnalité en développement - Profil de la chorale disponible prochainement'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
                     },
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          t.app.title, // "Shir Choir"
+                          t.app.title, // "Shir Book"
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimary,
                             fontSize: 24,
@@ -216,7 +257,9 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
                           children: [
                             // Compteur de chants
                             Container(
@@ -252,7 +295,6 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
                             // Rôle utilisateur
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -377,7 +419,21 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
                     ),
                   )
                 : null,
-            border: InputBorder.none,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.primary,
+                width: 2,
+              ),
+            ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           ),
@@ -386,46 +442,141 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, Translations t) {
+  Widget _buildLoadingState(BuildContext context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(40),
-            ),
-            child: Icon(
-              Icons.music_off_outlined,
-              size: 40,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          CircularProgressIndicator(
+            color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 24),
           Text(
-            t.dashboard.noSongsFound,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            'Chargement des chants...',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Essayez de modifier vos filtres',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.6),
-                ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, Translations t, Object error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: Icon(
+                Icons.error_outline,
+                size: 40,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Erreur de chargement',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _formatErrorForUser(error.toString()),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.7),
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                ref.read(songsProvider.notifier).forceSync();
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatErrorForUser(String error) {
+    if (error.contains('Connection')) {
+      return 'Vérifiez votre connexion Internet et réessayez.';
+    } else if (error.contains('timeout')) {
+      return 'La connexion a pris trop de temps. Réessayez.';
+    } else if (error.contains('manifest')) {
+      return 'Erreur de configuration. Contactez le support.';
+    }
+    return 'Une erreur inattendue s\'est produite. Réessayez.';
+  }
+
+  Widget _buildEmptyState(BuildContext context, Translations t) {
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                  child: Icon(
+                    Icons.music_off_outlined,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  t.dashboard.noSongsFound,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tirez vers le bas pour actualiser',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6),
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -443,8 +594,6 @@ class _ChoristeDashboardPageState extends ConsumerState<ChoristeDashboardPage> {
         return 'Ce chant n\'est disponible qu\'en local';
       case SongAvailability.downloadedAndReady:
         return 'Chant prêt à être joué';
-      default:
-        return 'Statut inconnu';
     }
   }
 }

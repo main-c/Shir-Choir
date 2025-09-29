@@ -5,6 +5,7 @@ import '../models/song_model.dart';
 import '../models/song_extensions.dart';
 import '../../../core/services/sync_service.dart';
 import '../../../core/services/github_storage_service.dart';
+import '../../../core/services/local_storage_service.dart';
 
 // Provider pour la liste des chants avec synchronisation
 final songsProvider =
@@ -18,6 +19,7 @@ class SongsNotifier extends StateNotifier<AsyncValue<List<Song>>> {
   }
 
   final SyncService _syncService = SyncService();
+  final LocalStorageService _localService = LocalStorageService();
 
   /// Charge tous les chants (locaux + distants si connecté)
   Future<void> loadSongs() async {
@@ -26,7 +28,25 @@ class SongsNotifier extends StateNotifier<AsyncValue<List<Song>>> {
       final songs = await _syncService.loadAllSongs();
       state = AsyncValue.data(songs);
     } catch (e, stackTrace) {
-      state = AsyncValue.error(e, stackTrace);
+      // En cas d'erreur, essayer de fallback sur les chants locaux
+      try {
+        await _localService.initialize();
+        final localSongs = await _localService.getStoredSongs();
+        if (localSongs.isNotEmpty) {
+          // Afficher les chants locaux + toast d'erreur
+          state = AsyncValue.data(localSongs);
+          _showErrorToast(
+            'Erreur de synchronisation', 
+            'Affichage des chants téléchargés uniquement. ${_formatErrorMessage(e.toString())}'
+          );
+        } else {
+          // Pas de chants locaux, afficher l'erreur complète
+          state = AsyncValue.error(e, stackTrace);
+        }
+      } catch (localError) {
+        // Erreur même pour récupérer les chants locaux
+        state = AsyncValue.error(e, stackTrace);
+      }
     }
   }
 
