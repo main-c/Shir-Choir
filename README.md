@@ -1,4 +1,4 @@
-<div align="center">   <p>Made with 🎵 for choir
+<div align="center">   <p>Made with 🎵 for choir</div>
 
 # ShirBook
 
@@ -247,4 +247,4 @@ Merci aux testeurs et choristes qui contribuent à améliorer ShirBook.
 
 <div align="center">   <sub>Fait pour les chorales, partout dans le monde</sub> </div>
 
-rs everywhere</p>   <p>     <a href="#-shirbook">Retour en haut</a>   </p> </div>
+</p>   <p>     <a href="#-shirbook">Retour en haut</a>   </p> </div>
